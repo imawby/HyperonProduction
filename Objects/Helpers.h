@@ -12,7 +12,7 @@
 #include "lardataobj/RecoBase/Track.h"
 #include "larreco/RecoAlg/TrackMomentumCalculator.h"
 #include "larevt/SpaceChargeServices/SpaceChargeService.h"
-
+#include "larcore/CoreUtils/ServiceUtil.h"
 //uboonecode objects
 #include "nusimdata/SimulationBase/MCParticle.h"
 

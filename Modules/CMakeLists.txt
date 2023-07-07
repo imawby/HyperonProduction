@@ -8,24 +8,22 @@ art_make(
                 ${ROOT_BASIC_LIB_LIST} #required to make Reco/Sim Particle dictionaries
 
 		MODULE_LIBRARIES 
-                larcorealg_Geometry
+        larcorealg_Geometry
 		ubana_ParticleID_Algorithms
 		larcore_Geometry_Geometry_service
 		larsim_Simulation
-                larsim_EventWeight_Base
-		nutools_ParticleNavigation
+        larsim_EventWeight_Base
 		lardataobj_Simulation
 		lardata_Utilities
 		larevt_Filters
 		lardataobj_RawData
 		lardataobj_RecoBase
 		lardata_RecoObjects
-                larreco_Deprecated
 		larreco_RecoAlg
 		larpandora_LArPandoraInterface
-		SignalShapingServiceMicroBooNE_service
 		nusimdata_SimulationBase
 		ubraw_RawData
+        art_Framework_Services_Registry
 		ubobj_Trigger
 		ubobj_Optical
 		${LARRECO_LIB}
@@ -45,10 +43,10 @@ art_make(
 		${ROOT_XMLIO}
 		${ROOT_GDML}
 		${ROOT_BASIC_LIB_LIST}
-                ${ROOT_GENVECTOR}
-                uboonecode_uboone_EventConnectedness
-                uboonecode_uboone_HyperonProduction_Algorithms
-                uboonecode_uboone_HyperonProduction_SubModules
+        ${ROOT_GENVECTOR}
+        uboonecode_uboone_EventConnectedness
+        uboonecode_uboone_HyperonProduction_Algorithms
+        uboonecode_uboone_HyperonProduction_SubModules
 )
 
 install_headers()

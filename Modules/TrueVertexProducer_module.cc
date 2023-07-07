@@ -24,6 +24,7 @@
 #include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/Vertex.h"
 
+#include "larcore/CoreUtils/ServiceUtil.h"
 #include "lardata/DetectorInfoServices/DetectorPropertiesService.h"
 #include "lardataalg/DetectorInfo/DetectorProperties.h"
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"

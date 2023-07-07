@@ -6,7 +6,10 @@
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
 
 #include "larcore/Geometry/Geometry.h"
+#include "larcorealg/Geometry/GeometryCore.h"
 #include "lardata/Utilities/GeometryUtilities.h"
+#include "larcore/CoreUtils/ServiceUtil.h"
+
 
 namespace searchingfornues
 {
@@ -48,14 +51,14 @@ namespace searchingfornues
                 (y1-y2)*(y1-y2) +
                 (z1-z2)*(z1-z2));
   }
-
+  /*
   float YZtoPlanecoordinate(const float y, const float z, const int plane)
   {
-    auto const* geom = ::lar::providerFrom<geo::Geometry>();
+    auto const* geom = lar::providerFrom<geo::Geometry>(); 
     double _wire2cm = geom->WirePitch(0, 0, 0);
     return geom->WireCoordinate(y, z, geo::PlaneID(0, 0, plane)) * _wire2cm;
   }
-
+  */
   float getPitch(float dir_y, float dir_z, int plane)
   {
     float aux_cos = 1.;
