@@ -59,6 +59,7 @@ double TrackTrueEndKE;
 double TrackTrueLength;
 int TrackTrueOrigin; // 1 - primary , 2 - hyperon decay, 3 - other, 4 - kaon decay, 5 - Sigma0 decay
 double TrackTruthPurity;
+int NMatchedHits;
 
 inline void SetVertex(TVector3 V);
 inline void SetTrackPositions(TVector3 Start,TVector3 End);

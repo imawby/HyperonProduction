@@ -243,7 +243,7 @@ void SubModuleReco::TruthMatch(const art::Ptr<recob::Track> &trk,RecoParticle &P
 
    std::vector<art::Ptr<recob::Hit>> hits = Assoc_TrackHit->at(trk.key());
 
-   std::unordered_map<int,double>  trkide;
+   std::unordered_map<int,int>  trkide;
    int maxhits=-1;
 
    simb::MCParticle const* matchedParticle = NULL;
@@ -294,6 +294,7 @@ void SubModuleReco::TruthMatch(const art::Ptr<recob::Track> &trk,RecoParticle &P
       P.TrackTrueLength = SP.Travel;
       P.TrackTrueOrigin = SP.Origin;
       P.TrackTruthPurity = (double)maxhits/hits.size();
+      P.NMatchedHits = maxhits;
    }
    else P.HasTruth = false;
 }
