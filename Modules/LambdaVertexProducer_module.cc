@@ -34,6 +34,8 @@
 #include "lardata/Utilities/AssociationUtil.h"
 
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleReco.h"
+#include "ubana/HyperonProduction/Modules/SubModules/SubModuleGeneratorTruth.h"
+#include "ubana/HyperonProduction/Modules/SubModules/SubModuleG4Truth.h"
 
 #include "larpandora/LArPandoraInterface/LArPandoraHelper.h"
 
@@ -64,6 +66,9 @@ class hyperon::LambdaVertexProducer : public art::EDProducer {
       std::string f_HitLabel;
       std::string f_ClusterLabel;
       std::string f_TruthMatchingLabel;
+
+      fhicl::ParameterSet f_Generator;
+      fhicl::ParameterSet f_G4;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,7 +79,9 @@ hyperon::LambdaVertexProducer::LambdaVertexProducer(fhicl::ParameterSet const& p
    f_PFParticleLabel(p.get<std::string>("PFParticleLabel", "pandora")),
    f_HitLabel(p.get<std::string>("HitLabel", "gaushit")),
    f_ClusterLabel(p.get<std::string>("ClusterLabel", "pandora")),
-   f_TruthMatchingLabel(p.get<std::string>("TruthMatchingLabel", "gaushitTruthMatch"))
+   f_TruthMatchingLabel(p.get<std::string>("TruthMatchingLabel", "gaushitTruthMatch")),
+   f_Generator(p.get<fhicl::ParameterSet>("Generator")),
+   f_G4(p.get<fhicl::ParameterSet>("Geant4"))
 {
    produces<std::vector<recob::Vertex>>();
    produces<std::vector<recob::Hit>>();
@@ -92,10 +99,51 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    std::unique_ptr< art::Assns<recob::Slice, recob::Vertex> > outputSliceVertexAssoc(new art::Assns<recob::Slice, recob::Vertex>);
 
    ///////////////////////////////////////////
-   // First check that we have a signal event, if not.. add empty vectors to the event
+   // First check that we have a signal event
    ///////////////////////////////////////////
-   // Check we have a signal event
-   // TODO
+
+   SubModuleGeneratorTruth* Generator_SM = new SubModuleGeneratorTruth(e, f_Generator);
+   GeneratorTruth GenT = Generator_SM->GetGeneratorTruth();
+
+   SubModuleG4Truth* G4_SM = new SubModuleG4Truth(e, f_G4);
+   G4Truth G4T = G4_SM->GetG4Info();
+
+   bool isSignalSigmaZero = false;
+
+   for (int i = 0; i < GenT.NMCTruths; i++)
+   {
+       if (GenT.Mode.at(i) != "HYP")
+           continue;
+
+       if (!G4T.InActiveTPC.at(i))
+           continue;
+
+       if (GenT.Neutrino.at(i).PDG != -14)
+           continue;
+
+       if (!G4T.IsSigmaZeroCharged.at(i))
+           continue;
+
+       if (G4T.IsAssociatedHyperon.at(i))
+           continue;
+
+       isSignalSigmaZero = true;
+   }
+
+   std::cout << "isSignalSigmaZero: " << (isSignalSigmaZero ? "yes" : "no") << std::endl;
+
+   if (!isSignalSigmaZero)
+   {
+       e.put(std::move(outputVertex));
+       e.put(std::move(outputHitVector));
+       e.put(std::move(outputPFParticleVector));
+       e.put(std::move(outputSliceVertexAssoc));
+       return;
+   }
+
+   ///////////////////////////////////////////
+   // Now check whether we need to modify the reco
+   ///////////////////////////////////////////
 
    // Get event PFParticles
    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
@@ -192,6 +240,8 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
 
    if (foundPion)
        this->GetTruthMatch(e, pionPFParticles.front(), mcParticleVector, matchedDecayPrimary);
+
+   std::cout << "evt.isRealData(): " << e.isRealData() << std::endl;
 
     std::cout << "matchedDecayPrimary->Vx(): " << matchedDecayPrimary->Vx()<< std::endl;
     std::cout << "matchedDecayPrimary->Vy(): " << matchedDecayPrimary->Vy()<< std::endl;
