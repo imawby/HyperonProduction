@@ -413,9 +413,20 @@ void SubModuleG4Truth::SetFlags(){
             if(theTruth.Decay.at(i_d).PDG == -211) hasPion = true;  
          }
       }
+
+      bool hasPhoton=false;
+      for (size_t i_p = 0; i_p < theTruth.SigmaZeroDecayPhoton.size(); i_p++)
+      {
+          // already checked PDG=22
+          if (theTruth.SigmaZeroDecayPhoton.at(i_p).MCTruthIndex == i_t)
+          {
+              nProducts++;
+              hasPhoton = true;
+          }
+      }
      
       if(nHyperons == 1 && theTruth.IsLambda.at(i_t) && nProducts == 2 && hasProton && hasPion) theTruth.IsLambdaCharged[i_t] = true;
-      if(nHyperons == 1 && theTruth.IsSigmaZero.at(i_t) && nProducts == 2 && hasProton && hasPion) theTruth.IsSigmaZeroCharged[i_t] = true;
+      if(nHyperons == 1 && theTruth.IsSigmaZero.at(i_t) && nProducts == 3 && hasProton && hasPion && hasPhoton) theTruth.IsSigmaZeroCharged[i_t] = true;
 
       for(size_t i_k=0;i_k<theTruth.PrimaryKaon.size();i_k++)
          if(theTruth.PrimaryKaon.at(i_k).MCTruthIndex == i_t) nKaons++;
