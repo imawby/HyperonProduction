@@ -34,6 +34,9 @@
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleG4Truth.h"
 #include "ubana/HyperonProduction/Alg/BDTHandle.h"
 
+// Pandora is the best
+#include "larpandora/LArPandoraInterface/LArPandoraHelper.h"
+
 #include "TVector3.h"
 
 using std::string;
@@ -64,15 +67,20 @@ class SubModuleReco {
 
    public:
 
-      //SubModuleReco();
       SubModuleReco(art::Event const& e,bool isdata,string pfparticlelabel,string tracklabel,
-                        string showerlabel,string vertexlabel,string pidlabel,string calolabel,string hitlabel,
-                        string hittruthassnlabel,string trackhitassnlabel,string metadatalabel,string genlabel,
-                        string g4label,bool dogetpids,bool includecosmics);
+                    string showerlabel,string vertexlabel,string pidlabel,string calolabel,string hitlabel,
+                    string hittruthassnlabel,string trackhitassnlabel,string metadatalabel,string genlabel,
+                    string g4label, string pfparticlelabelReprocessed, string tracklabelReprocessed,
+                    string showerlabelReprocessed, string vertexlabelReprocessed, string pidlabelReprocessed,
+                    string calolabelReprocessed, string hitlabelReprocessed,
+                    string trackhitassnlabelReprocessed, string metadatalabelReprocessed,
+                    string modifiedPFPListLabel,
+                    bool dogetpids,bool includecosmics, bool modifiedReco);
 
       SubModuleReco(art::Event const& e,bool isdata,fhicl::ParameterSet pset);
 
       void PrepareInfo(); 
+      void FillPrimaryInfo(const bool useRepassLabels);
       TVector3 GetPrimaryVertex();
       void SetIndices(std::vector<bool> IsSignal,std::vector<bool> IsSignalSigmaZero);
 
@@ -85,17 +93,27 @@ class SubModuleReco {
 
       art::Handle<std::vector<recob::PFParticle>> Handle_PFParticle;
       std::vector<art::Ptr<recob::PFParticle>> Vect_PFParticle;
+      art::Handle<std::vector<recob::PFParticle>> Handle_PFParticle_Reprocessed;
+      std::vector<art::Ptr<recob::PFParticle>> Vect_PFParticle_Reprocessed;
+      art::Handle<std::vector<int>> Handle_PFParticle_Modified;
+      std::vector<int> Vect_PFParticle_Modified;
 
       art::Handle<std::vector<recob::Track>> Handle_Track;
       std::vector<art::Ptr<recob::Track>> Vect_Track;
+      art::Handle<std::vector<recob::Track>> Handle_Track_Reprocessed;
+      std::vector<art::Ptr<recob::Track>> Vect_Track_Reprocessed;
 
       art::Handle<std::vector<recob::Shower>> Handle_Shower;
       std::vector<art::Ptr<recob::Shower>> Vect_Shower;
+      art::Handle<std::vector<recob::Shower>> Handle_Shower_Reprocessed;
+      std::vector<art::Ptr<recob::Shower>> Vect_Shower_Reprocessed;
 
       art::Handle<std::vector<recob::Hit>> Handle_Hit;
       std::vector<art::Ptr<recob::Hit>> Vect_Hit;
+      art::Handle<std::vector<recob::Hit>> Handle_Hit_Reprocessed;
+      std::vector<art::Ptr<recob::Hit>> Vect_Hit_Reprocessed;
 
-      RecoParticle MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp);
+      RecoParticle MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels);
 
       art::FindManyP<recob::Vertex>* Assoc_PFParticleVertex;
       art::FindManyP<recob::Track>* Assoc_PFParticleTrack;
@@ -106,6 +124,15 @@ class SubModuleReco {
       art::FindMany<simb::MCParticle,anab::BackTrackerHitMatchingData>* ParticlesPerHit;
       art::FindManyP<anab::Calorimetry>* Assoc_TrackCalo;
       art::FindManyP<anab::ParticleID>* Assoc_TrackPID;
+
+      art::FindManyP<recob::Vertex>* Assoc_PFParticleVertex_Reprocessed;
+      art::FindManyP<recob::Track>* Assoc_PFParticleTrack_Reprocessed;
+      art::FindManyP<recob::Shower>* Assoc_PFParticleShower_Reprocessed;
+      art::FindManyP<larpandoraobj::PFParticleMetadata>* Assoc_PFParticleMetadata_Reprocessed;
+      art::FindManyP<recob::Hit>* Assoc_TrackHit_Reprocessed;
+      art::FindMany<simb::MCParticle,anab::BackTrackerHitMatchingData>* ParticlesPerHit_Reprocessed;
+      art::FindManyP<anab::Calorimetry>* Assoc_TrackCalo_Reprocessed;
+      art::FindManyP<anab::ParticleID>* Assoc_TrackPID_Reprocessed;
 
       searchingfornues::LLRPID llr_pid_calculator;
       searchingfornues::ProtonMuonLookUpParameters protonmuon_parameters;
@@ -120,16 +147,17 @@ class SubModuleReco {
       size_t neutrinoID = 99999;
       std::map<size_t,int> m_PFPID_TrackIndex;
 
-      void GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P);
-      void GetTrackData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P);
-      void TruthMatch(const art::Ptr<recob::Track> &trk,RecoParticle &P);
-      void GetPIDs(const art::Ptr<recob::Track> &trk,RecoParticle &P);
-      void GetVertexData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P);
+      void GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
+      void GetTrackData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
+      void TruthMatch(const art::Ptr<recob::Track> &trk,RecoParticle &P, const bool useRepassLabels);
+      void GetPIDs(const art::Ptr<recob::Track> &trk,RecoParticle &P, const bool useRepassLabels);
+      void GetVertexData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
 
       bool IsData;
       bool DoGetPIDs=true;
       double ResRangeCutoff=5; 
       const bool IncludeCosmics;
+      const bool m_modifiedReco;
 };
 
 }

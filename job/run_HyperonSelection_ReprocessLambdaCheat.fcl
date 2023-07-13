@@ -38,21 +38,33 @@ services.SpaceCharge.CalibrationInputFilename: "SpaceCharge/SCEoffsets_dataDrive
 physics.analyzers.ana.IsData: false
 physics.analyzers.ana.Debug: true
 
-physics.analyzers.ana.RecoRepass: [
-                    {
-                    CaloModuleLabel: "pandoracaliLambdaCheat"
+physics.analyzers.ana.Reco: {
+                    CaloModuleLabel: "pandoracali"
                     G4ModuleLabel: "largeant"
                     GeneratorModuleLabel: "generator"
                     HitModuleLabel: "gaushit"
                     HitTruthAssnLabel: "gaushitTruthMatch"
-                    MetadataModuleLabel: "pandoraReprocessSlicesLambdaCheat"
-                    PFParticleModuleLabel: "pandoraReprocessSlicesLambdaCheat"
-                    PIDModuleLabel: "pandorapidLambdaCheat"
-                    ShowerHitAssnLabel: "pandoraReprocessSlicesLambdaCheatShower"
-                    ShowerModuleLabel: "pandoraReprocessSlicesLambdaCheatShower"
-                    TrackHitAssnLabel: "pandoraReprocessSlicesLambdaCheatTrack"
-                    TrackModuleLabel: "pandoraReprocessSlicesLambdaCheatTrack"
-                    VertexModuleLabel: "pandoraReprocessSlicesLambdaCheat"
+                    MetadataModuleLabel: "pandora"
+                    PFParticleModuleLabel: "pandora"
+                    PIDModuleLabel: "pandorapid"
+                    ShowerHitAssnLabel: "pandora"
+                    ShowerModuleLabel: "pandora"
+                    TrackHitAssnLabel: "pandora"
+                    TrackModuleLabel: "pandora"
+                    VertexModuleLabel: "pandora"
                     DoGetPIDs: true
-                   }
-]
+                    CaloModuleLabelReprocessed: "pandoracaliLambdaCheat"
+                    MetadataModuleLabelReprocessed: "pandoraReprocessSlicesLambdaCheat"
+                    PFParticleModuleLabelReprocessed: "pandoraReprocessSlicesLambdaCheat"
+                    PIDModuleLabelReprocessed: "pandorapidLambdaCheat"
+                    ShowerHitAssnLabelReprocessed: "pandoraReprocessSlicesLambdaCheatShower"
+                    ShowerModuleLabelReprocessed: "pandoraReprocessSlicesLambdaCheatShower"
+                    TrackHitAssnLabelReprocessed: "pandoraReprocessSlicesLambdaCheatTrack"
+                    TrackModuleLabelReprocessed: "pandoraReprocessSlicesLambdaCheatTrack"
+                    VertexModuleLabelReprocessed: "pandoraReprocessSlicesLambdaCheat"
+                    HitModuleLabelReprocessed: "gaushit"
+                    ModifiedPFPListLabel: "LambdaVertexProducer"
+                    ModifiedReco: true
+}
+
+
