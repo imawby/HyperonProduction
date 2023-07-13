@@ -145,16 +145,13 @@ namespace searchingfornues
       return ll_out;
     }
 
-    std::vector<float> correct_many_hits_one_plane(std::vector<float> dedx_values, std::vector<std::vector<float>> corr_par_values, std::vector<bool> is_to_correct, size_t plane)
+    std::vector<float> correct_many_hits_one_plane(std::vector<float> dedx_values, std::vector<std::vector<float>> corr_par_values, std::vector<bool> /*is_to_correct*/, size_t plane)
       {
 	std::vector<float> dedx_values_corrected;
 	for(size_t i=0; i<dedx_values.size(); i++)
 	  {
 	    float aux_dedx = dedx_values[i];
-	    if (is_to_correct[i])
-	      {
 		aux_dedx *= correction_hit_one_plane(corr_par_values[i], plane);
-	      }
 	    dedx_values_corrected.push_back(aux_dedx);
 	  }
 	return dedx_values_corrected;
@@ -203,6 +200,7 @@ namespace searchingfornues
 		//is_hit_montecarlo.push_back(searchingfornues::isHitBtMonteCarlo(tp_index, assocMCPart, fEnergyThresholdForMCHits));
                is_hit_montecarlo.push_back(true);
 	      }
+
 	    // correct hits
 	    dqdx_values_corrected = correct_many_hits_one_plane(dqdx_values, corr_par_values, is_hit_montecarlo, plane);
 	  }
