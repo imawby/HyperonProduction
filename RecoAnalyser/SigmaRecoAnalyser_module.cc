@@ -19,6 +19,7 @@
 
 // ROOT
 #include "TTree.h"
+#include "TVector3.h"
 
 // Services
 #include "art_root_io/TFileService.h"
@@ -66,6 +67,7 @@ public:
     bool IdentifySignalParticles(const G4Truth &G4Truth);
     bool IdentifySignalParticle(const std::vector<SimParticle> &simParticles,
         const int pdg, int &signalParticleID);
+    void FillTruthEventInfo(const GeneratorTruth & genTruth, const G4Truth &G4Truth);
 
 private:
 
@@ -277,14 +279,19 @@ void hyperon::SigmaRecoAnalyser::FillTruthEventInfo(const GeneratorTruth & genTr
     m_trueProtonPiOpeningAngle = protonMom.Angle(pionMom);
     m_trueGammaLambdaOpeningAngle = gammaMom.Angle(lambdaMom);
 
-    // NEED NU VERTEX AGGGHHH
+    const TVector3 nuVertex(genTruth.TruePrimaryVertex_X.at(m_mcTruthIndex), genTruth.TruePrimaryVertex_Y.at(m_mcTruthIndex), 
+        genTruth.TruePrimaryVertex_Z.at(m_mcTruthIndex));
+    const TVector3 protonVertex(protonMCParticle->Vx(), protonMCParticle->Vy(), protonMCParticle->Vz());
+    const TVector3 pionVertex(pionMCParticle->Vx(), pionMCParticle->Vy(), pionMCParticle->Vz());
 
-m_trueGammaLambdaVertexSep 
+    // Gamma, end point is first energy deposit (who designs this?)
+    const TVector3 gammaVertex({gammaMCParticle->EndX(), gammaMCParticle->EndY(), gammaMCParticle->EndZ()});
 
-    m_tree->Branch("TrueProtonPiOpeningAngle", &m_trueProtonPiOpeningAngle);
-    m_tree->Branch("TrueGammaLambdaOpeningAngle", &m_trueGammaLambdaOpeningAngle);
-    m_tree->Branch("TrueGammaLambdaVertexSep", &m_trueGammaLambdaVertexSep);
-
+    m_trueGammaLambdaVertexSep = (protonVertex - gammaVertex).Mag();
+    m_trueNuVertexSep[0] = 0.0;
+    m_trueNuVertexSep[1] = (protonVertex - nuVertex).Mag();
+    m_trueNuVertexSep[2] = (pionVertex - nuVertex).Mag();
+    m_trueNuVertexSep[3] = (gammaVertex - nuVertex).Mag();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -376,11 +383,11 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Truth stuff (particle level)
     m_truePDG.clear();
-    m_truePDG.resize(3, DEFAULT_INT);
+    m_truePDG.resize(4, DEFAULT_INT);
     m_nTrueHits.clear();
-    m_nTrueHits.resize(3, DEFAULT_INT);
+    m_nTrueHits.resize(4, DEFAULT_INT);
     m_trueNuVertexSep.clear();
-    m_trueNuVertexSep.resize(3, DEFAULT_DOUBLE);
+    m_trueNuVertexSep.resize(4, DEFAULT_DOUBLE);
 
     // Reco stuff (event level)
     m_gammaFoundInSlice = DEFAULT_INT;
@@ -389,17 +396,17 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Reco stuff (particle level)
     m_nMatches.clear();
-    m_nMatches.resize(3, DEFAULT_INT);
+    m_nMatches.resize(4, DEFAULT_INT);
     m_bestMatchFound.clear();
-    m_bestMatchFound.resize(3, DEFAULT_INT);
+    m_bestMatchFound.resize(4, DEFAULT_INT);
     m_bestMatchCompleteness.clear();
-    m_bestMatchCompleteness.resize(3, DEFAULT_DOUBLE);
+    m_bestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
     m_bestMatchPurity.clear();
-    m_bestMatchPurity.resize(3, DEFAULT_DOUBLE);
+    m_bestMatchPurity.resize(4, DEFAULT_DOUBLE);
     m_bestMatchTrackScore.clear();
-    m_bestMatchTrackScore.resize(3, DEFAULT_DOUBLE);
+    m_bestMatchTrackScore.resize(4, DEFAULT_DOUBLE);
     m_bestMatchGeneration.clear();
-    m_bestMatchGeneration.resize(3, DEFAULT_INT);
+    m_bestMatchGeneration.resize(4, DEFAULT_INT);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////

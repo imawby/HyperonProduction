@@ -23,12 +23,14 @@
 
 namespace hyperon {
 
-inline SimParticle MakeSimParticle(simb::MCParticle Part){
+inline SimParticle MakeSimParticle(const simb::MCParticle &Part){
 
    SimParticle S;
    S.SetKinematics(Part.Momentum(),Part.EndMomentum(),Part.Mass());
    S.PDG = Part.PdgCode();
    S.SetPositions(Part.Position(),Part.EndPosition());
+   S.ArtID = Part.TrackId();
+
    return S;
 }
 
