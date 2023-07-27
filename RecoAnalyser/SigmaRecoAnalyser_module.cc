@@ -135,10 +135,10 @@ private:
     double m_recoNuVertexX;
     double m_recoNuVertexY;
     double m_recoNuVertexZ;
+    bool m_protonPionMerged;
 
     // Reco stuff (particle level)
     std::vector<int> m_nMatches;
-    std::vector<int> m_matchFoundInSlice;
     std::vector<double> m_bestMatchCompleteness;
     std::vector<double> m_bestMatchPurity;
     std::vector<double> m_bestMatchTrackScore;
@@ -149,16 +149,8 @@ private:
     std::vector<double> m_bestMatchRecoVertexZ;
     std::vector<double> m_bestMatchNuVertexSep;
 
+    std::vector<int> m_matchFoundInSlice;
     std::vector<int> m_matchFoundInOtherSlice;
-    std::vector<double> m_otherSliceCompleteness;
-    std::vector<double> m_otherSlicePurity;
-    std::vector<double> m_otherSliceTrackScore;
-    std::vector<int> m_otherSliceGeneration;
-    std::vector<double> m_otherSliceSliceScore;
-    std::vector<double> m_otherSliceRecoVertexX;
-    std::vector<double> m_otherSliceRecoVertexY;
-    std::vector<double> m_otherSliceRecoVertexZ;
-    std::vector<double> m_otherSliceNuVertexSep;
 
     int m_nParticlesFoundInSlice;
     int m_nParticlesFoundInOtherSlice;
@@ -560,10 +552,10 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 
     for (const art::Ptr<recob::PFParticle> &pfp : pfpVector)
     {
+        std::map<int, int> trackIDToHitMap;
+
         std::vector<art::Ptr<recob::Hit>> pfpHits;
         CollectHitsFromClusters(evt, pfp, pfpHits);
-
-        int sharedHits = 0;
 
         for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
         {
@@ -580,13 +572,39 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 
                 const int matchedTrackID = IsEM(matchedMCParticle) ? GetLeadEMTrackID(matchedMCParticle) : matchedMCParticle->TrackId();
 
-                if (matchedTrackID == m_trueParticleID[particleIndex])
-                    sharedHits++;
+                trackIDToHitMap[matchedTrackID]++;
             }
         }
 
-        if (sharedHits > 0)
-            m_matchingMap[particleIndex].push_back(std::pair<int, int>(pfp->Self(), sharedHits));
+        if (trackIDToHitMap.find(m_trueParticleID[particleIndex]) == trackIDToHitMap.end())
+            continue;
+
+        int maxHits = -1;
+        int maxOwnerID = -1;
+
+        for (auto &entry : trackIDToHitMap)
+        {
+            if ((entry.second > maxHits) || ((entry.second == maxHits) && (entry.first > maxOwnerID)))
+            {
+                maxHits = entry.second;
+                maxOwnerID = entry.first;
+            }
+        }
+
+        if (maxOwnerID == m_trueParticleID[particleIndex])
+            m_matchingMap[particleIndex].push_back(std::pair<int, int>(pfp->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
+
+        if (particleIndex == PROTON_INDEX)
+        {
+            if ((maxOwnerID != PROTON_INDEX) && (maxOwnerID == PION_INDEX))
+                m_protonPionMerged = true;
+        }
+
+        if (particleIndex == PION_INDEX)
+        {
+            if ((maxOwnerID != PION_INDEX) && (maxOwnerID == PROTON_INDEX))
+                m_protonPionMerged = true;
+        }
     }
 }
 
@@ -636,7 +654,8 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
     {
         if (m_debugMode) std::cout << "--------------- particleTypeIndex: " << particleTypeIndex << std::endl;
 
-        m_nMatches[particleTypeIndex] = 0;
+        int nuSliceMatches = 0;
+        int otherSliceMatches = 0;
 
         bool foundMatchInSlice = false;
         bool foundMatchInOtherSlice = false;
@@ -648,16 +667,20 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
             const art::Ptr<recob::PFParticle> pfp(m_pfpMap.at(matchPair.first));
             const int parentPDG(lar_pandora::LArPandoraHelper::GetParentNeutrino(m_pfpMap, pfp));
 
-            // If in neutrino slice...
+            // Best match should come from neutrino slice (if it exists in nu slice)
+            // Come from another slice if it exists elsewhere)
             if (std::abs(parentPDG) == 14)
-                ++m_nMatches[particleTypeIndex];
+                ++nuSliceMatches;
+            else
+                ++otherSliceMatches;
 
-            const bool setBestSliceMatch(!foundMatchInSlice && (m_nMatches[particleTypeIndex] == 1));
-            const bool setOtherSliceMatch(!foundMatchInOtherSlice && (m_nMatches[particleTypeIndex] == 0));
+            const bool setBestSliceMatch(!foundMatchInSlice && (nuSliceMatches == 1));
+            const bool setOtherSliceMatch(!foundMatchInOtherSlice && (nuSliceMatches == 0));
 
             if (!setBestSliceMatch && !setOtherSliceMatch)
                 continue;
 
+            // Now work out the best match variables 
             const double completeness(static_cast<double>(matchPair.second) / static_cast<double>(m_nTrueHits[particleTypeIndex]));
 
             std::vector<art::Ptr<recob::Hit>> pfpHits;
@@ -680,7 +703,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
             double vertexX(DEFAULT_DOUBLE), vertexY(DEFAULT_DOUBLE), vertexZ(DEFAULT_DOUBLE);
             double nuVertexSep(DEFAULT_DOUBLE);
 
-            if (!vertex.empty())
+            if (!vertex.empty() && m_foundRecoNuVertex)
             {
                 vertexX = vertex[0]->position().X();
                 vertexY = vertex[0]->position().Y();                
@@ -694,34 +717,19 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
             }
 
             if (setBestSliceMatch)
-            {
-                m_bestMatchCompleteness[particleTypeIndex] = completeness;
-                m_bestMatchPurity[particleTypeIndex] = purity;
-                m_bestMatchTrackScore[particleTypeIndex] = trackScore;
-                m_bestMatchGeneration[particleTypeIndex] = generation;
-                m_bestMatchSliceScore[particleTypeIndex] = sliceScore;
-                m_bestMatchRecoVertexX[particleTypeIndex] = vertexX;
-                m_bestMatchRecoVertexY[particleTypeIndex] = vertexY;
-                m_bestMatchRecoVertexZ[particleTypeIndex] = vertexZ;
-                m_bestMatchNuVertexSep[particleTypeIndex] = nuVertexSep;
-
-                ++m_nParticlesFoundInSlice;
                 foundMatchInSlice = true;
-            }
             else
-            {
-                m_otherSliceCompleteness[particleTypeIndex] = completeness;
-                m_otherSlicePurity[particleTypeIndex] = purity;
-                m_otherSliceTrackScore[particleTypeIndex] = trackScore;
-                m_otherSliceGeneration[particleTypeIndex] = generation;
-                m_otherSliceSliceScore[particleTypeIndex] = sliceScore;
-                m_otherSliceRecoVertexX[particleTypeIndex] = vertexX;
-                m_otherSliceRecoVertexY[particleTypeIndex] = vertexY;
-                m_otherSliceRecoVertexZ[particleTypeIndex] = vertexZ;
-                m_otherSliceNuVertexSep[particleTypeIndex] = nuVertexSep;
                 foundMatchInOtherSlice = true;
-                ++m_nParticlesFoundInOtherSlice;
-            }
+
+            m_bestMatchCompleteness[particleTypeIndex] = completeness;
+            m_bestMatchPurity[particleTypeIndex] = purity;
+            m_bestMatchTrackScore[particleTypeIndex] = trackScore;
+            m_bestMatchGeneration[particleTypeIndex] = generation;
+            m_bestMatchSliceScore[particleTypeIndex] = sliceScore;
+            m_bestMatchRecoVertexX[particleTypeIndex] = vertexX;
+            m_bestMatchRecoVertexY[particleTypeIndex] = vertexY;
+            m_bestMatchRecoVertexZ[particleTypeIndex] = vertexZ;
+            m_bestMatchNuVertexSep[particleTypeIndex] = nuVertexSep;
 
             if (m_debugMode)
             {
@@ -731,21 +739,24 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
                 std::cout << "bestMatchGeneration: " << m_bestMatchGeneration[particleTypeIndex] << std::endl;
                 std::cout << "bestMatchSliceScore: " << m_bestMatchSliceScore[particleTypeIndex] << std::endl;
                 std::cout << "bestMatchNuVertexSep: " << m_bestMatchNuVertexSep[particleTypeIndex] << std::endl;
-
-                std::cout << "otherSliceCompleteness: " << m_otherSliceCompleteness[particleTypeIndex] << std::endl;
-                std::cout << "otherSlicePurity: " << m_otherSlicePurity[particleTypeIndex] << std::endl;
-                std::cout << "otherSliceTrackScore: " << m_otherSliceTrackScore[particleTypeIndex] << std::endl;
-                std::cout << "otherSliceGeneration: " << m_otherSliceGeneration[particleTypeIndex] << std::endl;
-                std::cout << "otherSliceSliceScore: " << m_otherSliceSliceScore[particleTypeIndex] << std::endl;
-                std::cout << "otherSliceNuVertexSep: " << m_otherSliceNuVertexSep[particleTypeIndex] << std::endl;
             }
         }
 
+        if (foundMatchInSlice)
+            ++m_nParticlesFoundInSlice;
+
+        if (!foundMatchInSlice && foundMatchInOtherSlice)
+            ++m_nParticlesFoundInOtherSlice;
+
+        m_nMatches[particleTypeIndex] = foundMatchInSlice ? nuSliceMatches : otherSliceMatches;
+    
+
         m_matchFoundInSlice[particleTypeIndex] = foundMatchInSlice;
-        m_matchFoundInOtherSlice[particleTypeIndex] = foundMatchInOtherSlice;
+        m_matchFoundInOtherSlice[particleTypeIndex] = !foundMatchInSlice && foundMatchInOtherSlice;
 
         if (m_debugMode)
         {
+            std::cout << "nMatches: " << m_nMatches[particleTypeIndex] << std::endl;
             std::cout << "matchFoundInSlice: " << m_matchFoundInSlice[particleTypeIndex] << std::endl;
             std::cout << "matchFoundInOtherSlice " << m_matchFoundInOtherSlice[particleTypeIndex] << std::endl;
         }
@@ -756,6 +767,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
         std::cout << "Overall matching status: " << std::endl;
         std::cout << "nParticlesFoundInSlice: " << m_nParticlesFoundInSlice << std::endl;
         std::cout << "nParticlesFoundInOtherSlice: " << m_nParticlesFoundInOtherSlice << std::endl;
+        std::cout << "protonPionMerged? " << m_protonPionMerged << std::endl;
     }
 
     m_nParticlesFoundOverall = m_nParticlesFoundInSlice + m_nParticlesFoundInOtherSlice;
@@ -818,6 +830,7 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
 
         if (!vertex.empty())
         {
+            m_foundRecoNuVertex = true;
             m_recoNuVertexX = vertex[0]->position().X();
             m_recoNuVertexY = vertex[0]->position().Y();
             m_recoNuVertexZ = vertex[0]->position().Z();
@@ -856,10 +869,11 @@ void hyperon::SigmaRecoAnalyser::beginJob()
 
     // Reco stuff (event level)
     m_tree->Branch("SliceNuScore", &m_sliceNuScore);
-    m_tree->Branch("m_foundRecoNuVertex", &m_foundRecoNuVertex);
-    m_tree->Branch("m_recoNuVertexX", &m_recoNuVertexX);
-    m_tree->Branch("m_recoNuVertexY", &m_recoNuVertexY);
-    m_tree->Branch("m_recoNuVertexZ", &m_recoNuVertexZ);
+    m_tree->Branch("FoundRecoNuVertex", &m_foundRecoNuVertex);
+    m_tree->Branch("RecoNuVertexX", &m_recoNuVertexX);
+    m_tree->Branch("RecoNuVertexY", &m_recoNuVertexY);
+    m_tree->Branch("RecoNuVertexZ", &m_recoNuVertexZ);
+    m_tree->Branch("ProtonPionMerged", &m_protonPionMerged);
 
     // Reco stuff (particle level)
     m_tree->Branch("NMatches", &m_nMatches);
@@ -874,15 +888,6 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("BestMatchRecoVertexZ", &m_bestMatchRecoVertexZ);
     m_tree->Branch("BestMatchNuVertexSep", &m_bestMatchNuVertexSep);
     m_tree->Branch("MatchFoundInOtherSlice", &m_matchFoundInOtherSlice);
-    m_tree->Branch("OtherSliceCompleteness", &m_otherSliceCompleteness);
-    m_tree->Branch("OtherSlicePurity", &m_otherSlicePurity);
-    m_tree->Branch("OtherSliceTrackScore", &m_otherSliceTrackScore);
-    m_tree->Branch("OtherSliceGeneration", &m_otherSliceGeneration);
-    m_tree->Branch("OtherSliceSliceScore", &m_otherSliceSliceScore);
-    m_tree->Branch("OtherSliceRecoVertexX", &m_otherSliceRecoVertexX);
-    m_tree->Branch("OtherSliceRecoVertexY", &m_otherSliceRecoVertexY);
-    m_tree->Branch("OtherSliceRecoVertexZ", &m_otherSliceRecoVertexZ);
-    m_tree->Branch("OtherSliceNuVertexSep", &m_otherSliceNuVertexSep);
     m_tree->Branch("NParticlesFoundInSlice", &m_nParticlesFoundInSlice);
     m_tree->Branch("NParticlesFoundInOtherSlice", &m_nParticlesFoundInOtherSlice);
     m_tree->Branch("NParticlesFoundOverall", &m_nParticlesFoundOverall);
@@ -929,6 +934,7 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_recoNuVertexX = DEFAULT_DOUBLE;
     m_recoNuVertexY = DEFAULT_DOUBLE;
     m_recoNuVertexZ = DEFAULT_DOUBLE;
+    m_protonPionMerged = DEFAULT_BOOL;
 
     // Reco stuff (particle level)
     m_nMatches.clear();
@@ -955,24 +961,6 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_bestMatchNuVertexSep.resize(4, DEFAULT_DOUBLE);
     m_matchFoundInOtherSlice.clear();
     m_matchFoundInOtherSlice.resize(4, DEFAULT_INT);
-    m_otherSliceCompleteness.clear();
-    m_otherSliceCompleteness.resize(4, DEFAULT_DOUBLE);
-    m_otherSlicePurity.clear();
-    m_otherSlicePurity.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceTrackScore.clear();
-    m_otherSliceTrackScore.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceGeneration.clear();
-    m_otherSliceGeneration.resize(4, DEFAULT_INT);
-    m_otherSliceSliceScore.clear();
-    m_otherSliceSliceScore.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceRecoVertexX.clear();
-    m_otherSliceRecoVertexX.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceRecoVertexY.clear();
-    m_otherSliceRecoVertexY.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceRecoVertexZ.clear();
-    m_otherSliceRecoVertexZ.resize(4, DEFAULT_DOUBLE);
-    m_otherSliceNuVertexSep.clear();
-    m_otherSliceNuVertexSep.resize(4, DEFAULT_DOUBLE);
     m_nParticlesFoundInSlice = DEFAULT_INT;
     m_nParticlesFoundInOtherSlice = DEFAULT_INT;
     m_nParticlesFoundOverall = DEFAULT_INT;
