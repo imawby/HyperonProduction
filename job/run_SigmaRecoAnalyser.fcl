@@ -1,0 +1,43 @@
+#include "sigmaRecoAnalyser.fcl"
+#include "services_microboone.fcl"
+
+process_name: SigmaRecoAnalyser
+
+services:
+{
+  # Load the service that manages root files for histograms.
+  TFileService: { fileName: "sigmaRecoAna.root" }
+  @table::microboone_services
+  FileCatalogMetadata:  @local::art_file_catalog_mc
+}
+
+source:
+{
+  module_type: RootInput
+  maxEvents:  -1        # Number of events to create
+}
+
+physics:
+{
+  analyzers: { 
+    sigmaRecoAnalyser: @local::sigmaRecoAnalyser 
+  }
+
+ ana: [ sigmaRecoAnalyser ]
+
+ # Do not change root file
+  end_paths: [ ana ] 
+}
+
+services.DetectorClocksService.InheritClockConfig: false
+services.DetectorClocksService.TriggerOffsetTPC: -400
+services.DetectorPropertiesService.NumberTimeSamples: 6400
+services.DetectorPropertiesService.ReadOutWindowSize: 6400
+services.SpaceCharge.EnableCalSpatialSCE: true #enable bkwd (reco -> true)
+services.SpaceCharge.EnableCalEfieldSCE: true
+services.SpaceCharge.EnableSimSpatialSCE: true # disable fwd (true -> reco)
+services.SpaceCharge.EnableSimEfieldSCE: true
+services.SpaceCharge.RepresentationType: "Voxelized_TH3"
+services.SpaceCharge.CalibrationInputFilename: "SpaceCharge/SCEoffsets_dataDriven_combined_bkwd_Jan18.root"
+
+physics.analyzers.ana.IsData: false
