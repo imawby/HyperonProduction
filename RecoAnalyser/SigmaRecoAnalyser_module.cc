@@ -23,6 +23,7 @@
 
 // Services
 #include "art_root_io/TFileService.h"
+#include "larevt/SpaceChargeServices/SpaceChargeService.h"
 
 // Hyperon
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleG4Truth.h"
@@ -122,6 +123,10 @@ private:
     int m_event;
 
     // Truth stuff (event level) 
+    bool m_foundTrueNuVertexSCE;
+    double m_trueNuVertexSCEX;
+    double m_trueNuVertexSCEY;
+    double m_trueNuVertexSCEZ;
     double m_trueProtonPiOpeningAngle;
     double m_trueGammaLambdaOpeningAngle;
     double m_trueGammaLambdaVertexSep;
@@ -138,6 +143,8 @@ private:
     double m_recoNuVertexY;
     double m_recoNuVertexZ;
     bool m_protonPionMerged;
+    bool m_isPionContaminatedByProton;
+    bool m_isProtonContaminatedByPion;
 
     // Reco stuff (particle level)
     std::vector<int> m_nMatches;
@@ -203,6 +210,11 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
     m_run = evt.run();
     m_subRun = evt.subRun();
     m_event = evt.event();
+
+    m_truePDG[MUON_INDEX] = -13;
+    m_truePDG[PROTON_INDEX] = 2212;
+    m_truePDG[PION_INDEX] = -211;
+    m_truePDG[GAMMA_INDEX] = 22;
 
     /////////////////////////
     // Truth info
@@ -395,6 +407,21 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleTopologyInfo(const GeneratorTruth
 
     const TVector3 nuVertex(genTruth.TruePrimaryVertex_X.at(m_mcTruthIndex), genTruth.TruePrimaryVertex_Y.at(m_mcTruthIndex), 
         genTruth.TruePrimaryVertex_Z.at(m_mcTruthIndex));
+
+
+    auto const *SCE = lar::providerFrom<spacecharge::SpaceChargeService>();
+
+    if (SCE->EnableSimSpatialSCE() == true)
+    {
+        m_foundTrueNuVertexSCE = true;
+
+        auto offset = SCE->GetPosOffsets(geo::Point_t(nuVertex.X(), nuVertex.Y(), nuVertex.Z()));
+
+        m_trueNuVertexSCEX = nuVertex.X() - offset.X() + 0.6;
+        m_trueNuVertexSCEY = nuVertex.Y() + offset.Y();
+        m_trueNuVertexSCEZ = nuVertex.Z() + offset.Z();
+    }
+
     const TVector3 muonVertex(muonMCParticle->Vx(), muonMCParticle->Vy(), muonMCParticle->Vz());
     const TVector3 protonVertex(protonMCParticle->Vx(), protonMCParticle->Vy(), protonMCParticle->Vz());
     const TVector3 pionVertex(pionMCParticle->Vx(), pionMCParticle->Vy(), pionMCParticle->Vz());
@@ -425,6 +452,11 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
     // Get backtracker info
     art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData> assocMCPart = art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData>(hitHandle, evt, m_BacktrackLabel);
 
+    m_nTrueHits[MUON_INDEX] = 0;
+    m_nTrueHits[PROTON_INDEX] = 0;
+    m_nTrueHits[PION_INDEX] = 0;
+    m_nTrueHits[GAMMA_INDEX] = 0;
+
     // Truth match to found IDs
     for (unsigned int hitIndex = 0; hitIndex < hitVector.size(); hitIndex++)
     {
@@ -443,13 +475,13 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
             int trackID = matchedMCParticle->TrackId();
 
             if (trackID == m_trueParticleID[MUON_INDEX])
-                m_nTrueHits[MUON_INDEX] = (m_nTrueHits[MUON_INDEX] == DEFAULT_INT ? 1 : ++m_nTrueHits[MUON_INDEX]);
+                ++m_nTrueHits[MUON_INDEX];
             else if (trackID == m_trueParticleID[PROTON_INDEX])
-                m_nTrueHits[PROTON_INDEX] = (m_nTrueHits[PROTON_INDEX] == DEFAULT_INT ? 1 : ++m_nTrueHits[PROTON_INDEX]);
+                ++m_nTrueHits[PROTON_INDEX];
             else if (trackID == m_trueParticleID[PION_INDEX])
-                m_nTrueHits[PION_INDEX] = (m_nTrueHits[PION_INDEX] == DEFAULT_INT ? 1 : ++m_nTrueHits[PION_INDEX]);
+                ++m_nTrueHits[PION_INDEX];
             else if (IsEM(matchedMCParticle) && (GetLeadEMTrackID(matchedMCParticle) == m_trueParticleID[GAMMA_INDEX]))
-                m_nTrueHits[GAMMA_INDEX] = (m_nTrueHits[GAMMA_INDEX] == DEFAULT_INT ? 1 : ++m_nTrueHits[GAMMA_INDEX]);
+                ++m_nTrueHits[GAMMA_INDEX];
         }
     }
 
@@ -604,14 +636,14 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 
         if (particleIndex == PROTON_INDEX)
         {
-            if ((maxOwnerID != PROTON_INDEX) && (maxOwnerID == PION_INDEX))
-                m_protonPionMerged = true;
+            if ((maxOwnerID != m_trueParticleID[PROTON_INDEX]) && (maxOwnerID == m_trueParticleID[PION_INDEX]))
+                m_isPionContaminatedByProton = true;
         }
 
         if (particleIndex == PION_INDEX)
         {
-            if ((maxOwnerID != PION_INDEX) && (maxOwnerID == PROTON_INDEX))
-                m_protonPionMerged = true;
+            if ((maxOwnerID != m_trueParticleID[PION_INDEX]) && (maxOwnerID == m_trueParticleID[PROTON_INDEX]))
+                m_isProtonContaminatedByPion = true;
         }
     }
 }
@@ -776,6 +808,12 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
         }
     }
 
+    if (m_matchFoundInSlice[PION_INDEX] && !m_matchFoundInSlice[PROTON_INDEX] && m_isPionContaminatedByProton)
+        m_protonPionMerged = true;
+
+    if (m_matchFoundInSlice[PROTON_INDEX] && !m_matchFoundInSlice[PION_INDEX] && m_isProtonContaminatedByPion)
+        m_protonPionMerged = true;
+
     if (m_debugMode)
     {
         std::cout << "Overall matching status: " << std::endl;
@@ -876,6 +914,10 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("Event", &m_event);
 
     // Truth stuff (event level) 
+    m_tree->Branch("FoundTrueNuVertexSCE", &m_foundTrueNuVertexSCE);
+    m_tree->Branch("TrueNuVertexSCEX", &m_trueNuVertexSCEX);
+    m_tree->Branch("TrueNuVertexSCEY", &m_trueNuVertexSCEY);
+    m_tree->Branch("TrueNuVertexSCEZ", &m_trueNuVertexSCEZ);
     m_tree->Branch("TrueProtonPiOpeningAngle", &m_trueProtonPiOpeningAngle);
     m_tree->Branch("TrueGammaLambdaOpeningAngle", &m_trueGammaLambdaOpeningAngle);
     m_tree->Branch("TrueGammaLambdaVertexSep", &m_trueGammaLambdaVertexSep);
@@ -940,6 +982,10 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_event = DEFAULT_INT;
 
     // Truth stuff (event level) 
+    m_foundTrueNuVertexSCE = DEFAULT_BOOL;
+    m_trueNuVertexSCEX = DEFAULT_DOUBLE;
+    m_trueNuVertexSCEY = DEFAULT_DOUBLE;
+    m_trueNuVertexSCEZ = DEFAULT_DOUBLE;
     m_trueProtonPiOpeningAngle = DEFAULT_DOUBLE;
     m_trueGammaLambdaOpeningAngle = DEFAULT_DOUBLE;
     m_trueGammaLambdaVertexSep = DEFAULT_DOUBLE;
@@ -959,6 +1005,8 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_recoNuVertexY = DEFAULT_DOUBLE;
     m_recoNuVertexZ = DEFAULT_DOUBLE;
     m_protonPionMerged = DEFAULT_BOOL;
+    m_isPionContaminatedByProton = DEFAULT_BOOL;
+    m_isProtonContaminatedByPion = DEFAULT_BOOL;
 
     // Reco stuff (particle level)
     m_nMatches.clear();
