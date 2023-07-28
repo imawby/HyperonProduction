@@ -97,9 +97,11 @@ private:
     fhicl::ParameterSet m_generatorLabels;
     std::string m_MCParticleLabel;
     std::string m_PFParticleLabel;
+    std::string m_PFParticleInstance;
     std::string m_HitLabel;
     std::string m_BacktrackLabel;
     std::string m_ClusterLabel;
+    std::string m_ClusterInstance;
 
     // Debug Info?
     bool m_debugMode;
@@ -174,9 +176,11 @@ hyperon::SigmaRecoAnalyser::SigmaRecoAnalyser(fhicl::ParameterSet const& pset)
     m_generatorLabels(pset.get<fhicl::ParameterSet>("Generator")),
     m_MCParticleLabel(pset.get<std::string>("MCParticleLabel")),
     m_PFParticleLabel(pset.get<std::string>("PFParticleLabel")),
+    m_PFParticleInstance(pset.get<std::string>("PFParticleInstance", "")),
     m_HitLabel(pset.get<std::string>("HitLabel")),
     m_BacktrackLabel(pset.get<std::string>("BacktrackLabel")),
     m_ClusterLabel(pset.get<std::string>("ClusterLabel")),
+    m_ClusterInstance(pset.get<std::string>("ClusterInstance", "")),
     m_debugMode(pset.get<bool>("DebugMode"))
 {
 }
@@ -299,7 +303,9 @@ void hyperon::SigmaRecoAnalyser::FillPandoraMaps(art::Event const& evt)
     art::Handle<std::vector<recob::PFParticle>> pfpHandle;
     std::vector<art::Ptr<recob::PFParticle>> pfpVector;
 
-    if (!evt.getByLabel(m_PFParticleLabel, pfpHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+    if (!evt.getByLabel(pfpInputTag, pfpHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
     art::fill_ptr_vector(pfpVector, pfpHandle);
@@ -494,7 +500,9 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
     art::Handle<std::vector<recob::PFParticle>> pfpHandle;
     std::vector<art::Ptr<recob::PFParticle>> pfpVector;
 
-    if (!evt.getByLabel(m_PFParticleLabel, pfpHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+    if (!evt.getByLabel(pfpInputTag, pfpHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
     art::fill_ptr_vector(pfpVector, pfpHandle);
@@ -615,16 +623,20 @@ void hyperon::SigmaRecoAnalyser::CollectHitsFromClusters(art::Event const& evt, 
 {
    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
 
-   if (!evt.getByLabel(m_PFParticleLabel, pfparticleHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+   if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
    art::Handle<std::vector<recob::Cluster>> clusterHandle;
 
-   if (!evt.getByLabel(m_ClusterLabel, clusterHandle)) 
+    art::InputTag clusterInputTag(m_ClusterLabel, m_ClusterInstance);
+
+   if (!evt.getByLabel(clusterInputTag, clusterHandle)) 
        throw cet::exception("SigmaRecoAnalyser") << "No Cluster Data Products Found!" << std::endl;
 
-   art::FindManyP<recob::Cluster> pfparticleClustersAssoc = art::FindManyP<recob::Cluster>(pfparticleHandle, evt, m_PFParticleLabel);
-   art::FindManyP<recob::Hit> clusterHitAssoc = art::FindManyP<recob::Hit>(clusterHandle, evt, m_ClusterLabel);
+   art::FindManyP<recob::Cluster> pfparticleClustersAssoc = art::FindManyP<recob::Cluster>(pfparticleHandle, evt, pfpInputTag);
+   art::FindManyP<recob::Hit> clusterHitAssoc = art::FindManyP<recob::Hit>(clusterHandle, evt, clusterInputTag);
 
    std::vector<art::Ptr<recob::Cluster>> clusters = pfparticleClustersAssoc.at(pfparticle.key());
 
@@ -641,11 +653,13 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
 {
     art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
 
-    if (!evt.getByLabel(m_PFParticleLabel, pfparticleHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+    if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
-    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle, evt, m_PFParticleLabel);
-    art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfparticleHandle, evt, m_PFParticleLabel);
+    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle, evt, pfpInputTag);
+    art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfparticleHandle, evt, pfpInputTag);
 
     m_nParticlesFoundInSlice = 0;
     m_nParticlesFoundInOtherSlice = 0;
@@ -779,16 +793,21 @@ double hyperon::SigmaRecoAnalyser::GetSliceScore(art::Event const& evt, const ar
 {
     art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
 
-    if (!evt.getByLabel(m_PFParticleLabel, pfparticleHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+    if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
     double sliceScore = DEFAULT_DOUBLE;
     const art::Ptr<recob::PFParticle> &parentPFParticle(lar_pandora::LArPandoraHelper::GetParentPFParticle(m_pfpMap, pfp));
-    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle, evt, m_PFParticleLabel);
+    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle, evt, pfpInputTag);
     std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(parentPFParticle.key());
 
     if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("NuScore") != pfpMetadata[0]->GetPropertiesMap().end()))
         sliceScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
+
+    if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("IsClearCosmic") != pfpMetadata[0]->GetPropertiesMap().end()))
+        std::cout << "IsClearCosmic: " << pfpMetadata[0]->GetPropertiesMap().at("IsClearCosmic") << std::endl;
 
     return sliceScore;
 }
@@ -800,7 +819,9 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
     art::Handle<std::vector<recob::PFParticle>> pfpHandle;
     std::vector<art::Ptr<recob::PFParticle>> pfpVector;
 
-    if (!evt.getByLabel(m_PFParticleLabel, pfpHandle))
+    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+
+    if (!evt.getByLabel(pfpInputTag, pfpHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
     art::fill_ptr_vector(pfpVector, pfpHandle);
@@ -814,18 +835,21 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
     }
     else if (neutrinoPFPs.size() == 0)
     {
+        std::cout << "NO NEUTRINO FOUND" << std::endl;
         m_sliceNuScore = -1;
     }
     else
     {
-        art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfpHandle, evt, m_PFParticleLabel);
+        art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfpHandle, evt, pfpInputTag);
         std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(neutrinoPFPs[0].key());
 
         if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("NuScore") != pfpMetadata[0]->GetPropertiesMap().end()))
             m_sliceNuScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
 
+        std::cout << "m_sliceNuScore: " << m_sliceNuScore << std::endl;
+
         // Vertices
-        art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, m_PFParticleLabel);
+        art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, pfpInputTag);
         std::vector<art::Ptr<recob::Vertex>> vertex = vertexAssoc.at(neutrinoPFPs[0].key());
 
         if (!vertex.empty())

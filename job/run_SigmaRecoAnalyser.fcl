@@ -6,7 +6,7 @@ process_name: SigmaRecoAnalyser
 services:
 {
   # Load the service that manages root files for histograms.
-  TFileService: { fileName: "sigmaRecoAna.root" }
+  TFileService: { fileName: "sigmaRecoAna_pandora.root" }
   @table::microboone_services
   FileCatalogMetadata:  @local::art_file_catalog_mc
 }
@@ -39,5 +39,3 @@ services.SpaceCharge.EnableSimSpatialSCE: true # disable fwd (true -> reco)
 services.SpaceCharge.EnableSimEfieldSCE: true
 services.SpaceCharge.RepresentationType: "Voxelized_TH3"
 services.SpaceCharge.CalibrationInputFilename: "SpaceCharge/SCEoffsets_dataDriven_combined_bkwd_Jan18.root"
-
-physics.analyzers.ana.IsData: false
