@@ -39,6 +39,7 @@
 #include "lardataobj/RecoBase/Vertex.h"
 #include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/PFParticleMetadata.h"
+#include "lardataobj/RecoBase/Slice.h"
 
 const int DEFAULT_INT = -999;
 const double DEFAULT_DOUBLE = -999.0;
@@ -73,6 +74,9 @@ public:
     void endJob() override;
 
     void Reset();
+    void InvestigateSlices(art::Event const& evt);
+    void CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
+        std::vector<art::Ptr<recob::Hit>> &hits, const std::string &moduleName, const std::string &instanceName);
     bool IsSignalEvent(const GeneratorTruth & genTruth, const G4Truth &G4Truth);
     void FillPandoraMaps(art::Event const& evt);
     bool IdentifySignalParticles(const G4Truth &G4Truth);
@@ -81,9 +85,9 @@ public:
     void FillMCParticleHitInfo(art::Event const& evt);
     bool IsEM(const art::Ptr<simb::MCParticle> &mcParticle);
     int GetLeadEMTrackID(const art::Ptr<simb::MCParticle> &mcParticle);
+    void FillMCSliceInfo(art::Event const& evt);
     void PerformMatching(art::Event const& evt);
-    void FindMCParticleMatches(art::Event const& evt, const int particleIndex,
-        const std::vector<art::Ptr<recob::PFParticle>> &pfpVector);
+    void FindMCParticleMatches(art::Event const& evt, const int particleIndex);
     void CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
         std::vector<art::Ptr<recob::Hit>> &hits);
     void FillMatchingInfo(art::Event const& evt);
@@ -103,6 +107,7 @@ private:
     std::string m_BacktrackLabel;
     std::string m_ClusterLabel;
     std::string m_ClusterInstance;
+    //std::string m_SliceLabel;
 
     // Debug Info?
     bool m_debugMode;
@@ -112,6 +117,8 @@ private:
     std::vector<int> m_trueParticleID;
     std::vector<int> m_bestMatchedID;
     std::vector<std::vector<int>> m_matchIDs;
+    int m_trueNuSliceID;
+    int m_trueNuSliceNHits;
 
     // Analyser tree
     TTree * m_tree;
@@ -137,7 +144,8 @@ private:
     std::vector<double> m_trueNuVertexSep;
 
     // Reco stuff (event level)
-    double m_sliceNuScore;
+    double m_recoNuSliceScore;
+    int m_recoNuSliceID;
     bool m_foundRecoNuVertex;
     double m_recoNuVertexX;
     double m_recoNuVertexY;
@@ -165,14 +173,20 @@ private:
     int m_nParticlesFoundInOtherSlice;
     int m_nParticlesFoundOverall;
 
+    // Linking particleTypeIndex -> list of hit.key()
+    typedef std::map<int, int> TrueHitMap;
+    TrueHitMap m_trueHitMap;
+
     // Linking TrackID -> MCParticle
     lar_pandora::MCParticleMap m_mcParticleMap;
 
     // Linking Self() -> PFParticle
     lar_pandora::PFParticleMap m_pfpMap;
+    lar_pandora::PFParticleMap m_pfpMap_AO;
 
     // Matching map
-    MatchingMap m_matchingMap;
+    MatchingMap m_nuSliceMatchingMap;
+    MatchingMap m_otherSliceMatchingMap;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -188,6 +202,7 @@ hyperon::SigmaRecoAnalyser::SigmaRecoAnalyser(fhicl::ParameterSet const& pset)
     m_BacktrackLabel(pset.get<std::string>("BacktrackLabel")),
     m_ClusterLabel(pset.get<std::string>("ClusterLabel")),
     m_ClusterInstance(pset.get<std::string>("ClusterInstance", "")),
+    //m_SliceLabel(pset.get<std::string>("SliceLabel")),
     m_debugMode(pset.get<bool>("DebugMode"))
 {
 }
@@ -215,6 +230,13 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
     m_truePDG[PROTON_INDEX] = 2212;
     m_truePDG[PION_INDEX] = -211;
     m_truePDG[GAMMA_INDEX] = 22;
+
+
+    /////////////////////////
+    // Investigating slices
+    /////////////////////////
+    InvestigateSlices(evt);
+
 
     /////////////////////////
     // Truth info
@@ -248,6 +270,7 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
     if (m_debugMode) std::cout << "Fill MC info..." << std::endl;
     FillMCParticleTopologyInfo(genTruth, G4Truth);
     FillMCParticleHitInfo(evt);
+    FillMCSliceInfo(evt);
 
     /////////////////////////
     // Reco info
@@ -261,6 +284,126 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
     FillMatchingInfo(evt);
 
     m_tree->Fill();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::SigmaRecoAnalyser::InvestigateSlices(art::Event const& evt)
+{
+    // Slice vector - OG
+    art::Handle<std::vector<recob::Slice>> sliceHandle_OG;
+    std::vector<art::Ptr<recob::Slice>> sliceVector_OG;
+
+    if (!evt.getByLabel("pandora", sliceHandle_OG))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::PFParticle> pfpAssoc_OG = art::FindManyP<recob::PFParticle>(sliceHandle_OG, evt, "pandora");
+    art::fill_ptr_vector(sliceVector_OG, sliceHandle_OG);
+
+    // Fill slice ID -> PFParticle map (OG)
+    std::map<int, std::vector<art::Ptr<recob::PFParticle>>> sliceMap_OG;
+
+    for (art::Ptr<recob::Slice> &slice_OG : sliceVector_OG)
+        sliceMap_OG[slice_OG->ID()] = pfpAssoc_OG.at(slice_OG.key());
+
+    // Slice vector - AO
+    art::InputTag sliceInputTag("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::Slice>> sliceHandle_AO;
+    std::vector<art::Ptr<recob::Slice>> sliceVector_AO;
+
+    if (!evt.getByLabel(sliceInputTag, sliceHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::PFParticle> pfpAssoc_AO = art::FindManyP<recob::PFParticle>(sliceHandle_AO, evt, sliceInputTag);
+    art::fill_ptr_vector(sliceVector_AO, sliceHandle_AO);
+
+    // Fill slice ID -> PFParticle map (AO)
+    std::map<int, std::vector<art::Ptr<recob::PFParticle>>> sliceMap_AO;
+
+    for (art::Ptr<recob::Slice> &slice_AO : sliceVector_AO)
+        sliceMap_AO[slice_AO->ID()] = pfpAssoc_AO.at(slice_AO.key());
+
+    //////////////////////////////////////////////////////
+    // PFParticle map
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle_AO;
+    std::vector<art::Ptr<recob::PFParticle>> pfpVector_AO;
+
+    art::InputTag pfpInputTag_AO("pandoraPatRec", "allOutcomes");
+
+    if (!evt.getByLabel(pfpInputTag_AO, pfpHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::fill_ptr_vector(pfpVector_AO, pfpHandle_AO);
+
+    lar_pandora::PFParticleMap pfpMap_AO;
+    lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfpVector_AO, pfpMap_AO);
+
+    for (auto &entry : sliceMap_AO)
+    {
+        std::cout << "entry.first: " << entry.first << std::endl;
+        std::cout << "------------" << std::endl;
+        for (art::Ptr<recob::PFParticle> &fu : sliceMap_AO.at(entry.first))
+        {
+            std::cout << "Is parent a neutrino?: " << (lar_pandora::LArPandoraHelper::IsNeutrino(lar_pandora::LArPandoraHelper::GetParentPFParticle(pfpMap_AO, fu))) << std::endl;
+            std::cout << "generation: " << lar_pandora::LArPandoraHelper::GetGeneration(pfpMap_AO, fu) << std::endl;
+        }
+    }
+    //////////////////////////////////////////////////////
+
+    // Look at first slice
+    std::cout << "pfps_OG.size(): " << sliceMap_OG.at(1).size() << std::endl;
+    std::cout << "pfps_AO.size(): " << sliceMap_AO.at(1).size() << std::endl;
+
+    std::vector<art::Ptr<recob::Hit>> allHits_OG;
+    std::vector<art::Ptr<recob::Hit>> allHits_AO;
+
+    for (art::Ptr<recob::PFParticle> pfp : sliceMap_OG.at(1))
+    {
+        std::vector<art::Ptr<recob::Hit>> thisHits;
+        CollectHitsFromClusters(evt, pfp, thisHits, "pandora", "");
+        allHits_OG.insert(allHits_OG.begin(), thisHits.begin(), thisHits.end());
+    }
+
+    for (art::Ptr<recob::PFParticle> pfp : sliceMap_AO.at(1))
+    {
+        if(!lar_pandora::LArPandoraHelper::IsNeutrino(lar_pandora::LArPandoraHelper::GetParentPFParticle(pfpMap_AO, pfp)))
+            continue;
+
+        std::vector<art::Ptr<recob::Hit>> thisHits;
+        CollectHitsFromClusters(evt, pfp, thisHits, "pandoraPatRec", "allOutcomes");
+        allHits_AO.insert(allHits_AO.begin(), thisHits.begin(), thisHits.end());
+    }
+
+    std::cout << "allHits_OG.size(): " << allHits_OG.size() << std::endl;
+    std::cout << "allHits_AO.size(): " << allHits_AO.size() << std::endl;
+
+    for (art::Ptr<recob::Hit> &hit : allHits_OG)
+    {
+        bool found = false;
+
+        for (const art::Ptr<recob::Hit> &otherHit : allHits_AO)
+        {
+            if (otherHit.key() == hit.key())
+                found = true;
+        }
+        
+        if (!found)
+            std::cout << "DIDN'T FIND HIT!!!" << std::endl;
+    }
+
+    for (art::Ptr<recob::Hit> &hit : allHits_AO)
+    {
+        bool found = false;
+
+        for (const art::Ptr<recob::Hit> &otherHit : allHits_OG)
+        {
+            if (otherHit.key() == hit.key())
+                found = true;
+        }
+        
+        if (!found)
+            std::cout << "DIDN'T FIND HIT!!!" << std::endl;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -325,6 +468,20 @@ void hyperon::SigmaRecoAnalyser::FillPandoraMaps(art::Event const& evt)
     lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfpVector, m_pfpMap);
 
     if (m_debugMode) std::cout << "m_pfpMap.size(): " << m_pfpMap.size() << std::endl;
+
+    // PFParticle map - all outcomes
+    art::InputTag pfpInputTag_AO("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle_AO;
+    std::vector<art::Ptr<recob::PFParticle>> pfpVector_AO;
+
+    if (!evt.getByLabel(pfpInputTag_AO, pfpHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::fill_ptr_vector(pfpVector_AO, pfpHandle_AO);
+
+    lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfpVector_AO, m_pfpMap_AO);
+
+    if (m_debugMode) std::cout << "m_pfpMap_AO.size(): " << m_pfpMap_AO.size() << std::endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -472,7 +629,9 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
             if (matchedData->isMaxIDE != 1)
                 continue;
 
-            int trackID = matchedMCParticle->TrackId();
+            int trackID = IsEM(matchedMCParticle) ? GetLeadEMTrackID(matchedMCParticle) : matchedMCParticle->TrackId();
+
+            m_trueHitMap[hit.key()] = trackID;
 
             if (trackID == m_trueParticleID[MUON_INDEX])
                 ++m_nTrueHits[MUON_INDEX];
@@ -480,7 +639,7 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
                 ++m_nTrueHits[PROTON_INDEX];
             else if (trackID == m_trueParticleID[PION_INDEX])
                 ++m_nTrueHits[PION_INDEX];
-            else if (IsEM(matchedMCParticle) && (GetLeadEMTrackID(matchedMCParticle) == m_trueParticleID[GAMMA_INDEX]))
+            else if (trackID == m_trueParticleID[GAMMA_INDEX])
                 ++m_nTrueHits[GAMMA_INDEX];
         }
     }
@@ -526,25 +685,85 @@ int hyperon::SigmaRecoAnalyser::GetLeadEMTrackID(const art::Ptr<simb::MCParticle
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+void hyperon::SigmaRecoAnalyser::FillMCSliceInfo(art::Event const& evt)
+{
+    // Get slice information
+    art::Handle<std::vector<recob::Slice>> sliceHandle;
+    std::vector<art::Ptr<recob::Slice>> sliceVector;
+
+    if (!evt.getByLabel("pandora", sliceHandle))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::Hit> hitAssoc = art::FindManyP<recob::Hit>(sliceHandle, evt, "pandora");
+    art::fill_ptr_vector(sliceVector, sliceHandle);
+
+    // Find slice that contains the nu hierarchy hits
+    std::map<int, int> sliceSignalHitMap;
+
+    int highestHitNumber(-1);
+    int highestHitSliceID(-1);
+
+    for (art::Ptr<recob::Slice> &slice : sliceVector)
+    {
+        sliceSignalHitMap[slice->ID()] = 0;
+
+        const std::vector<art::Ptr<recob::Hit>> &sliceHits(hitAssoc.at(slice.key()));
+
+        for (const art::Ptr<recob::Hit> &sliceHit : sliceHits)
+        {
+            if (m_trueHitMap.find(sliceHit.key()) == m_trueHitMap.end())
+                continue;
+
+            int trackID = m_trueHitMap.at(sliceHit.key());
+
+            if ((trackID == m_trueParticleID[MUON_INDEX]) || (trackID == m_trueParticleID[PROTON_INDEX]) || 
+                (trackID == m_trueParticleID[PION_INDEX]) || (trackID == m_trueParticleID[GAMMA_INDEX]))
+            {
+                ++sliceSignalHitMap[slice->ID()]; 
+            }
+        }
+
+        if ((sliceSignalHitMap[slice->ID()] > highestHitNumber) && (sliceSignalHitMap[slice->ID()] > 0))
+        {
+            highestHitNumber = sliceSignalHitMap[slice->ID()];
+            highestHitSliceID = slice->ID();
+        }
+    }
+
+    if (highestHitSliceID >= 0)
+    {
+        m_trueNuSliceID = highestHitSliceID;
+        m_trueNuSliceNHits = highestHitNumber;
+    }
+
+    if (m_debugMode) std::cout << "True nu slice has ID: " <<m_trueNuSliceID << ", and contains: " << m_trueNuSliceNHits << " hits" << std::endl;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
 void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
 {
-    // Get all reco particles
-    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
-    std::vector<art::Ptr<recob::PFParticle>> pfpVector;
-
-    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
-
-    if (!evt.getByLabel(pfpInputTag, pfpHandle))
-        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
-
-    art::fill_ptr_vector(pfpVector, pfpHandle);
-
     // Fill matching map
     for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
-        FindMCParticleMatches(evt, particleTypeIndex, pfpVector);
+        FindMCParticleMatches(evt, particleTypeIndex);
 
     // Order the matching map (in order of highest -> lowest shared hits)
-    for (auto &entry : m_matchingMap)
+    for (auto &entry : m_nuSliceMatchingMap)
+    {
+        std::sort(entry.second.begin(), entry.second.end(), 
+            [](const std::pair<int, int> &a, std::pair<int, int> &b) -> bool 
+            {
+                // tie-breaker
+                if (a.second == b.second)
+                    return a.first > b.first;
+
+                return a.second > b.second;
+            }
+        );
+    }
+
+    // Order the matching map (in order of highest -> lowest shared hits)
+    for (auto &entry : m_otherSliceMatchingMap)
     {
         std::sort(entry.second.begin(), entry.second.end(), 
             [](const std::pair<int, int> &a, std::pair<int, int> &b) -> bool 
@@ -560,9 +779,20 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
 
     if (m_debugMode)
     {
-        std::cout << "Matching map: " << std::endl;
+        std::cout << "Neutrino slice matching map: " << std::endl;
 
-        for (auto &entry : m_matchingMap)
+        for (auto &entry : m_nuSliceMatchingMap)
+        {
+            std::cout << "index: " << entry.first << std::endl;
+            std::cout << entry.second.size() << " matches" << std::endl;
+
+            for (auto &pair : entry.second)
+                std::cout << "(PFParticle ID: " << pair.first << ", shared hits: " << pair.second << std::endl;
+        }
+
+        std::cout << "Other slice matching map: " << std::endl;
+
+        for (auto &entry : m_otherSliceMatchingMap)
         {
             std::cout << "index: " << entry.first << std::endl;
             std::cout << entry.second.size() << " matches" << std::endl;
@@ -575,75 +805,154 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, const int particleIndex, 
-    const std::vector<art::Ptr<recob::PFParticle>> &pfpVector)
+void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, const int particleIndex)
 {
-    // Get event hits
-    art::Handle<std::vector<recob::Hit>> hitHandle;
-    std::vector<art::Ptr<recob::Hit>> hitVector;
+    // Slice vector
+    art::Handle<std::vector<recob::Slice>> sliceHandle;
+    std::vector<art::Ptr<recob::Slice>> sliceVector;
 
-    if (!evt.getByLabel(m_HitLabel, hitHandle))
-        throw cet::exception("SigmaRecoAnalyser") << "No Hit Data Products Found!" << std::endl;
+    if (!evt.getByLabel("pandora", sliceHandle))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
 
-    art::fill_ptr_vector(hitVector, hitHandle);
+    art::FindManyP<recob::PFParticle> pfpAssoc = art::FindManyP<recob::PFParticle>(sliceHandle, evt, "pandora");
+    art::fill_ptr_vector(sliceVector, sliceHandle);
 
-    // Get backtracker info
-    art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData> assocMCPart = art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData>(hitHandle, evt, m_BacktrackLabel);
-
-    for (const art::Ptr<recob::PFParticle> &pfp : pfpVector)
+    // Search in the slice vector first...
+    bool foundInNuSlice = false;
+    for (const art::Ptr<recob::Slice> &slice : sliceVector)
     {
-        std::map<int, int> trackIDToHitMap;
+        if (slice->ID() != m_recoNuSliceID)
+            continue;
 
-        std::vector<art::Ptr<recob::Hit>> pfpHits;
-        CollectHitsFromClusters(evt, pfp, pfpHits);
+        const std::vector<art::Ptr<recob::PFParticle>> &pfps(pfpAssoc.at(slice.key()));
 
-        for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
+        for (const art::Ptr<recob::PFParticle> &pfp : pfps)
         {
-            const std::vector<art::Ptr<simb::MCParticle>> &matchedMCParticles = assocMCPart.at(pfpHit.key());
-            auto matchedDatas = assocMCPart.data(pfpHit.key());
+            std::map<int, int> trackIDToHitMap;
 
-            for (unsigned int mcParticleIndex = 0; mcParticleIndex < matchedMCParticles.size(); ++mcParticleIndex)
+            std::vector<art::Ptr<recob::Hit>> pfpHits;
+            CollectHitsFromClusters(evt, pfp, pfpHits, "pandora", "");
+
+            for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
             {
-                const art::Ptr<simb::MCParticle> &matchedMCParticle = matchedMCParticles.at(mcParticleIndex);
-                auto matchedData = matchedDatas.at(mcParticleIndex);
-
-                if (matchedData->isMaxIDE != 1)
+                if (m_trueHitMap.find(pfpHit.key()) == m_trueHitMap.end())
                     continue;
 
-                const int matchedTrackID = IsEM(matchedMCParticle) ? GetLeadEMTrackID(matchedMCParticle) : matchedMCParticle->TrackId();
+                const int trackID(m_trueHitMap.at(pfpHit.key()));
 
-                trackIDToHitMap[matchedTrackID]++;
+                if (trackIDToHitMap.find(trackID) == trackIDToHitMap.end())
+                    trackIDToHitMap[trackID] = 1;
+                else
+                    ++trackIDToHitMap[trackID];
+            }
+
+            if (trackIDToHitMap.find(m_trueParticleID[particleIndex]) == trackIDToHitMap.end())
+                continue;
+
+            int maxHits = -1;
+            int maxOwnerID = -1;
+
+            for (auto &entry : trackIDToHitMap)
+            {
+                if ((entry.second > maxHits) || ((entry.second == maxHits) && (entry.first > maxOwnerID)))
+                {
+                    maxHits = entry.second;
+                    maxOwnerID = entry.first;
+                }
+            }
+
+            if (maxOwnerID == m_trueParticleID[particleIndex])
+            {
+                m_nuSliceMatchingMap[particleIndex].push_back(std::pair<int, int>(pfp->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
+                foundInNuSlice = true;
+            }
+
+            if (particleIndex == PROTON_INDEX)
+            {
+                if ((maxOwnerID != m_trueParticleID[PROTON_INDEX]) && (maxOwnerID == m_trueParticleID[PION_INDEX]))
+                {
+                    m_isPionContaminatedByProton = true;
+                    foundInNuSlice = true;
+                }
+            }
+
+            if (particleIndex == PION_INDEX)
+            {
+                if ((maxOwnerID != m_trueParticleID[PION_INDEX]) && (maxOwnerID == m_trueParticleID[PROTON_INDEX]))
+                {
+                    m_isProtonContaminatedByPion = true;
+                    foundInNuSlice = true;
+                }
             }
         }
+    }
 
-        if (trackIDToHitMap.find(m_trueParticleID[particleIndex]) == trackIDToHitMap.end())
+    if (foundInNuSlice)
+        return;
+
+    //////////////////////////////
+    // Now search in other slice!
+    //////////////////////////////
+
+    // Slice vector - All outcomes
+    art::InputTag sliceInputTag_AO("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::Slice>> sliceHandle_AO;
+    std::vector<art::Ptr<recob::Slice>> sliceVector_AO;
+
+    if (!evt.getByLabel(sliceInputTag_AO, sliceHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::PFParticle> pfpAssoc_AO = art::FindManyP<recob::PFParticle>(sliceHandle_AO, evt, sliceInputTag_AO);
+    art::fill_ptr_vector(sliceVector_AO, sliceHandle_AO);
+
+    for (const art::Ptr<recob::Slice> &slice_AO : sliceVector_AO)
+    {
+        if (slice_AO->ID() == m_recoNuSliceID)
             continue;
 
         int maxHits = -1;
         int maxOwnerID = -1;
 
-        for (auto &entry : trackIDToHitMap)
+        const std::vector<art::Ptr<recob::PFParticle>> &pfps_AO(pfpAssoc_AO.at(slice_AO.key()));
+
+        for (const art::Ptr<recob::PFParticle> &pfp_AO : pfps_AO)
         {
-            if ((entry.second > maxHits) || ((entry.second == maxHits) && (entry.first > maxOwnerID)))
+            // If not neutrino...
+            if (!lar_pandora::LArPandoraHelper::IsNeutrino(lar_pandora::LArPandoraHelper::GetParentPFParticle(m_pfpMap_AO, pfp_AO)))
+                continue;
+
+            std::map<int, int> trackIDToHitMap;
+
+            std::vector<art::Ptr<recob::Hit>> pfpHits_AO;
+            CollectHitsFromClusters(evt, pfp_AO, pfpHits_AO, "pandoraPatRec", "allOutcomes");
+
+            for (const art::Ptr<recob::Hit> pfpHit_AO : pfpHits_AO)
             {
-                maxHits = entry.second;
-                maxOwnerID = entry.first;
+                if (m_trueHitMap.find(pfpHit_AO.key()) == m_trueHitMap.end())
+                    continue;
+
+                const int trackID(m_trueHitMap.at(pfpHit_AO.key()));
+
+                if (trackIDToHitMap.find(trackID) == trackIDToHitMap.end())
+                    trackIDToHitMap[trackID] = 1;
+                else
+                    ++trackIDToHitMap[trackID];
             }
-        }
 
-        if (maxOwnerID == m_trueParticleID[particleIndex])
-            m_matchingMap[particleIndex].push_back(std::pair<int, int>(pfp->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
+            if (trackIDToHitMap.find(m_trueParticleID[particleIndex]) == trackIDToHitMap.end())
+                continue;
 
-        if (particleIndex == PROTON_INDEX)
-        {
-            if ((maxOwnerID != m_trueParticleID[PROTON_INDEX]) && (maxOwnerID == m_trueParticleID[PION_INDEX]))
-                m_isPionContaminatedByProton = true;
-        }
+            for (auto &entry : trackIDToHitMap)
+            {
+                if ((entry.second > maxHits) || ((entry.second == maxHits) && (entry.first > maxOwnerID)))
+                {
+                    maxHits = entry.second;
+                    maxOwnerID = entry.first;
+                }
+            }
 
-        if (particleIndex == PION_INDEX)
-        {
-            if ((maxOwnerID != m_trueParticleID[PION_INDEX]) && (maxOwnerID == m_trueParticleID[PROTON_INDEX]))
-                m_isProtonContaminatedByPion = true;
+            if (maxOwnerID == m_trueParticleID[particleIndex])
+                m_otherSliceMatchingMap[particleIndex].push_back(std::pair<int, int>(pfp_AO->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
         }
     }
 }
@@ -681,17 +990,58 @@ void hyperon::SigmaRecoAnalyser::CollectHitsFromClusters(art::Event const& evt, 
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+void hyperon::SigmaRecoAnalyser::CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
+   std::vector<art::Ptr<recob::Hit>> &hits, const std::string &moduleName, const std::string &instanceName)
+{
+   art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
+
+   art::InputTag pfpInputTag(moduleName, instanceName);
+
+   if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
+       throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+
+   art::Handle<std::vector<recob::Cluster>> clusterHandle;
+
+   art::InputTag clusterInputTag(moduleName, instanceName);
+
+   if (!evt.getByLabel(clusterInputTag, clusterHandle)) 
+       throw cet::exception("SigmaRecoAnalyser") << "No Cluster Data Products Found!" << std::endl;
+
+   art::FindManyP<recob::Cluster> pfparticleClustersAssoc = art::FindManyP<recob::Cluster>(pfparticleHandle, evt, pfpInputTag);
+   art::FindManyP<recob::Hit> clusterHitAssoc = art::FindManyP<recob::Hit>(clusterHandle, evt, clusterInputTag);
+
+   std::vector<art::Ptr<recob::Cluster>> clusters = pfparticleClustersAssoc.at(pfparticle.key());
+
+   for (const art::Ptr<recob::Cluster> cluster : clusters)
+   {
+       std::vector<art::Ptr<recob::Hit>> clusterHits = clusterHitAssoc.at(cluster.key());
+       hits.insert(hits.end(), clusterHits.begin(), clusterHits.end());
+   }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
 void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
 {
-    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
-
+    // Standard reco output
     art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
+    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
 
     if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
         throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
 
     art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle, evt, pfpInputTag);
     art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfparticleHandle, evt, pfpInputTag);
+
+    // All outcomes output
+    art::InputTag pfpInputTag_AO("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle_AO;
+
+    if (!evt.getByLabel(pfpInputTag_AO, pfparticleHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn_AO = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle_AO, evt, pfpInputTag_AO);
+    art::FindManyP<recob::Vertex> vertexAssoc_AO = art::FindManyP<recob::Vertex>(pfparticleHandle_AO, evt, pfpInputTag_AO);
 
     m_nParticlesFoundInSlice = 0;
     m_nParticlesFoundInOtherSlice = 0;
@@ -706,86 +1056,75 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
         bool foundMatchInSlice = false;
         bool foundMatchInOtherSlice = false;
 
-        const std::vector<std::pair<int, int>> &matchPairs(m_matchingMap[particleTypeIndex]);
+        const std::vector<std::pair<int, int>> &nuSliceMatchPairs(m_nuSliceMatchingMap[particleTypeIndex]);
+        const std::vector<std::pair<int, int>> &otherSliceMatchPairs(m_otherSliceMatchingMap[particleTypeIndex]);
 
-        for (const std::pair<int, int> &matchPair : matchPairs)
+        nuSliceMatches = nuSliceMatchPairs.size();
+        otherSliceMatches = otherSliceMatchPairs.size();
+
+        if ((nuSliceMatches == 0) && (otherSliceMatches == 0))
+            continue;
+
+        foundMatchInSlice = (nuSliceMatches != 0);
+        foundMatchInOtherSlice = (otherSliceMatches != 0);
+
+        const std::pair<int, int> &matchPair(foundMatchInSlice ? nuSliceMatchPairs.front() : otherSliceMatchPairs.front());
+        const art::Ptr<recob::PFParticle> pfp(foundMatchInSlice ? m_pfpMap.at(matchPair.first) : m_pfpMap_AO.at(matchPair.first));
+
+        // Now fill out bestMatchPfo info
+        const double completeness(static_cast<double>(matchPair.second) / static_cast<double>(m_nTrueHits[particleTypeIndex]));
+
+        std::vector<art::Ptr<recob::Hit>> pfpHits;
+        CollectHitsFromClusters(evt, pfp, pfpHits, (foundMatchInSlice ? "pandora" : "pandoraPatRec"), (foundMatchInSlice ? "" : "allOutcomes"));
+
+        const double purity(static_cast<double>(matchPair.second) / static_cast<double>(pfpHits.size()));
+
+        std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = (foundMatchInSlice ? metadataAssn.at(pfp.key()) : metadataAssn_AO.at(pfp.key()));
+
+        double trackScore(DEFAULT_DOUBLE);
+
+        if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
+            trackScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
+
+        //double sliceScore(GetSliceScore(evt, pfp));
+        int generation(lar_pandora::LArPandoraHelper::GetGeneration(foundMatchInSlice ? m_pfpMap : m_pfpMap_AO, pfp));
+
+        std::vector<art::Ptr<recob::Vertex>> vertex = foundMatchInSlice ? vertexAssoc.at(pfp.key()) : vertexAssoc_AO.at(pfp.key());
+
+        double vertexX(DEFAULT_DOUBLE), vertexY(DEFAULT_DOUBLE), vertexZ(DEFAULT_DOUBLE);
+        double nuVertexSep(DEFAULT_DOUBLE);
+
+        if (!vertex.empty() && m_foundRecoNuVertex)
         {
-            const art::Ptr<recob::PFParticle> pfp(m_pfpMap.at(matchPair.first));
-            const int parentPDG(lar_pandora::LArPandoraHelper::GetParentNeutrino(m_pfpMap, pfp));
+            vertexX = vertex[0]->position().X();
+            vertexY = vertex[0]->position().Y();
+            vertexZ = vertex[0]->position().Z();
 
-            // Best match should come from neutrino slice (if it exists in nu slice)
-            // Come from another slice if it exists elsewhere)
-            if (std::abs(parentPDG) == 14)
-                ++nuSliceMatches;
-            else
-                ++otherSliceMatches;
+            double deltaX(vertexX - m_recoNuVertexX);
+            double deltaY(vertexY - m_recoNuVertexY);
+            double deltaZ(vertexZ - m_recoNuVertexZ);
 
-            const bool setBestSliceMatch(!foundMatchInSlice && (nuSliceMatches == 1));
-            const bool setOtherSliceMatch(!foundMatchInOtherSlice && (nuSliceMatches == 0));
+            nuVertexSep = std::sqrt((deltaX * deltaX) + (deltaY * deltaY) + (deltaZ *  deltaZ));
+        }
 
-            if (!setBestSliceMatch && !setOtherSliceMatch)
-                continue;
+        m_bestMatchCompleteness[particleTypeIndex] = completeness;
+        m_bestMatchPurity[particleTypeIndex] = purity;
+        m_bestMatchTrackScore[particleTypeIndex] = trackScore;
+        m_bestMatchGeneration[particleTypeIndex] = generation;
+        //m_bestMatchSliceScore[particleTypeIndex] = sliceScore;
+        m_bestMatchRecoVertexX[particleTypeIndex] = vertexX;
+        m_bestMatchRecoVertexY[particleTypeIndex] = vertexY;
+        m_bestMatchRecoVertexZ[particleTypeIndex] = vertexZ;
+        m_bestMatchNuVertexSep[particleTypeIndex] = nuVertexSep;
 
-            // Now work out the best match variables 
-            const double completeness(static_cast<double>(matchPair.second) / static_cast<double>(m_nTrueHits[particleTypeIndex]));
-
-            std::vector<art::Ptr<recob::Hit>> pfpHits;
-            CollectHitsFromClusters(evt, pfp, pfpHits);
-
-            const double purity(static_cast<double>(matchPair.second) / static_cast<double>(pfpHits.size()));
-
-            std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(pfp.key());
-
-            double trackScore(DEFAULT_DOUBLE);
-
-            if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
-                trackScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
-
-            double sliceScore(GetSliceScore(evt, pfp));
-            int generation(lar_pandora::LArPandoraHelper::GetGeneration(m_pfpMap, pfp));
-
-            std::vector<art::Ptr<recob::Vertex>> vertex = vertexAssoc.at(pfp.key());
-
-            double vertexX(DEFAULT_DOUBLE), vertexY(DEFAULT_DOUBLE), vertexZ(DEFAULT_DOUBLE);
-            double nuVertexSep(DEFAULT_DOUBLE);
-
-            if (!vertex.empty() && m_foundRecoNuVertex)
-            {
-                vertexX = vertex[0]->position().X();
-                vertexY = vertex[0]->position().Y();                
-                vertexZ = vertex[0]->position().Z();
-
-                double deltaX(vertexX - m_recoNuVertexX);
-                double deltaY(vertexY - m_recoNuVertexY);
-                double deltaZ(vertexZ - m_recoNuVertexZ);
-
-                nuVertexSep = std::sqrt((deltaX * deltaX) + (deltaY * deltaY) + (deltaZ *  deltaZ));
-            }
-
-            if (setBestSliceMatch)
-                foundMatchInSlice = true;
-            else
-                foundMatchInOtherSlice = true;
-
-            m_bestMatchCompleteness[particleTypeIndex] = completeness;
-            m_bestMatchPurity[particleTypeIndex] = purity;
-            m_bestMatchTrackScore[particleTypeIndex] = trackScore;
-            m_bestMatchGeneration[particleTypeIndex] = generation;
-            m_bestMatchSliceScore[particleTypeIndex] = sliceScore;
-            m_bestMatchRecoVertexX[particleTypeIndex] = vertexX;
-            m_bestMatchRecoVertexY[particleTypeIndex] = vertexY;
-            m_bestMatchRecoVertexZ[particleTypeIndex] = vertexZ;
-            m_bestMatchNuVertexSep[particleTypeIndex] = nuVertexSep;
-
-            if (m_debugMode)
-            {
-                std::cout << "bestMatchCompleteness: " << m_bestMatchCompleteness[particleTypeIndex] << std::endl;
-                std::cout << "bestMatchPurity: " << m_bestMatchPurity[particleTypeIndex] << std::endl;
-                std::cout << "bestMatchTrackScore: " << m_bestMatchTrackScore[particleTypeIndex] << std::endl;
-                std::cout << "bestMatchGeneration: " << m_bestMatchGeneration[particleTypeIndex] << std::endl;
-                std::cout << "bestMatchSliceScore: " << m_bestMatchSliceScore[particleTypeIndex] << std::endl;
-                std::cout << "bestMatchNuVertexSep: " << m_bestMatchNuVertexSep[particleTypeIndex] << std::endl;
-            }
+        if (m_debugMode)
+        {
+            std::cout << "bestMatchCompleteness: " << m_bestMatchCompleteness[particleTypeIndex] << std::endl;
+            std::cout << "bestMatchPurity: " << m_bestMatchPurity[particleTypeIndex] << std::endl;
+            std::cout << "bestMatchTrackScore: " << m_bestMatchTrackScore[particleTypeIndex] << std::endl;
+            std::cout << "bestMatchGeneration: " << m_bestMatchGeneration[particleTypeIndex] << std::endl;
+            std::cout << "bestMatchSliceScore: " << m_bestMatchSliceScore[particleTypeIndex] << std::endl;
+            std::cout << "bestMatchNuVertexSep: " << m_bestMatchNuVertexSep[particleTypeIndex] << std::endl;
         }
 
         if (foundMatchInSlice)
@@ -795,7 +1134,6 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt)
             ++m_nParticlesFoundInOtherSlice;
 
         m_nMatches[particleTypeIndex] = foundMatchInSlice ? nuSliceMatches : otherSliceMatches;
-    
 
         m_matchFoundInSlice[particleTypeIndex] = foundMatchInSlice;
         m_matchFoundInOtherSlice[particleTypeIndex] = !foundMatchInSlice && foundMatchInOtherSlice;
@@ -873,20 +1211,23 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
     }
     else if (neutrinoPFPs.size() == 0)
     {
-        std::cout << "NO NEUTRINO FOUND" << std::endl;
-        m_sliceNuScore = -1;
+        if (m_debugMode) std::cout << "No neutrino found!! :(" << std::endl;
     }
     else
     {
+        // Slice score
         art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfpHandle, evt, pfpInputTag);
         std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(neutrinoPFPs[0].key());
 
         if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("NuScore") != pfpMetadata[0]->GetPropertiesMap().end()))
-            m_sliceNuScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
+            m_recoNuSliceScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
 
-        std::cout << "m_sliceNuScore: " << m_sliceNuScore << std::endl;
+        // Slice ID
+        art::FindManyP<recob::Slice> sliceAssoc = art::FindManyP<recob::Slice>(pfpHandle, evt, "pandora");
+        std::vector<art::Ptr<recob::Slice>> slice = sliceAssoc.at(neutrinoPFPs[0].key());
+        m_recoNuSliceID = slice[0]->ID();
 
-        // Vertices
+        // Nu vertex
         art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, pfpInputTag);
         std::vector<art::Ptr<recob::Vertex>> vertex = vertexAssoc.at(neutrinoPFPs[0].key());
 
@@ -896,6 +1237,12 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
             m_recoNuVertexX = vertex[0]->position().X();
             m_recoNuVertexY = vertex[0]->position().Y();
             m_recoNuVertexZ = vertex[0]->position().Z();
+        }
+
+        if (m_debugMode)
+        {
+            std::cout << "m_recoNuSliceScore: " << m_recoNuSliceScore << std::endl;
+            std::cout << "m_recoNuSliceID: " << m_recoNuSliceID << std::endl;
         }
     }
 }
@@ -927,6 +1274,8 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("TrueParticleID", &m_trueParticleID);
     m_tree->Branch("BestMatchedID", &m_bestMatchedID);
     m_tree->Branch("MatchIDs", &m_matchIDs);
+    m_tree->Branch("TrueNuSliceID", &m_trueNuSliceID);
+    m_tree->Branch("TrueNuSliceNHits", &m_trueNuSliceNHits);
 
     // Truth stuff (particle level)
     m_tree->Branch("TruePDG", &m_truePDG);
@@ -934,7 +1283,8 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("TrueNuVertexSep", &m_trueNuVertexSep);
 
     // Reco stuff (event level)
-    m_tree->Branch("SliceNuScore", &m_sliceNuScore);
+    m_tree->Branch("RecoNuSliceScore", &m_recoNuSliceScore);
+    m_tree->Branch("RecoNuSliceID", &m_recoNuSliceID);
     m_tree->Branch("FoundRecoNuVertex", &m_foundRecoNuVertex);
     m_tree->Branch("RecoNuVertexX", &m_recoNuVertexX);
     m_tree->Branch("RecoNuVertexY", &m_recoNuVertexY);
@@ -963,10 +1313,13 @@ void hyperon::SigmaRecoAnalyser::beginJob()
 
 void hyperon::SigmaRecoAnalyser::Reset()
 {
+    m_trueHitMap.clear();
+    m_pfpMap.clear();
     m_mcParticleMap.clear();
-    m_matchingMap.clear();
+    m_nuSliceMatchingMap.clear();
+    m_otherSliceMatchingMap.clear();
 
-    
+    // ID info    
     m_mcTruthIndex = DEFAULT_INT;
     m_trueParticleID.clear();
     m_trueParticleID.resize(4, DEFAULT_INT);
@@ -974,6 +1327,8 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_bestMatchedID.resize(4, DEFAULT_INT);
     m_matchIDs.clear();
     m_matchIDs.resize(4, std::vector<int>());
+    m_trueNuSliceID = DEFAULT_INT;
+    m_trueNuSliceNHits = DEFAULT_INT;
 
     //EventID
     m_eventID = DEFAULT_INT;
@@ -999,7 +1354,8 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_trueNuVertexSep.resize(4, DEFAULT_DOUBLE);
 
     // Reco stuff (event level)
-    m_sliceNuScore = DEFAULT_DOUBLE;
+    m_recoNuSliceScore = DEFAULT_DOUBLE;
+    m_recoNuSliceID = DEFAULT_DOUBLE;
     m_foundRecoNuVertex = DEFAULT_BOOL;
     m_recoNuVertexX = DEFAULT_DOUBLE;
     m_recoNuVertexY = DEFAULT_DOUBLE;
