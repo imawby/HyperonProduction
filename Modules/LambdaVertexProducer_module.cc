@@ -18,14 +18,13 @@
 #include "fhiclcpp/ParameterSet.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
-#include "nusimdata/SimulationBase/MCTruth.h"
-
 #include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/PFParticleMetadata.h"
 #include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/Vertex.h"
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Track.h"
+#include "lardataobj/AnalysisBase/BackTrackerMatchingData.h"
 
 #include "lardata/DetectorInfoServices/DetectorPropertiesService.h"
 #include "lardataalg/DetectorInfo/DetectorProperties.h"
@@ -41,6 +40,11 @@
 
 #include <memory>
 
+const int MUON_INDEX = 0;
+const int PROTON_INDEX = 1;
+const int PION_INDEX = 2;
+const int GAMMA_INDEX = 3;
+
 namespace hyperon {
    class LambdaVertexProducer;
 }
@@ -54,11 +58,22 @@ class hyperon::LambdaVertexProducer : public art::EDProducer {
       LambdaVertexProducer& operator=(LambdaVertexProducer&&) = delete;
 
       void produce(art::Event& e) override;
+      bool IdentifySignalParticles(const G4Truth &G4Truth, const int mcTruthIndex, const lar_pandora::MCParticleMap &mcParticleMap, 
+          int &muonTrackID, int &protonTrackID, int &pionTrackID, int &gammaTrackID);
+      bool IdentifySignalParticle(const G4Truth &G4Truth, const int mcTruthIndex, const lar_pandora::MCParticleMap &mcParticleMap, 
+          const int particleTypeIndex, int &particleTrackID);
+      void FillMCParticleHitInfo(art::Event const& evt, const lar_pandora::MCParticleMap &mcParticleMap,
+          std::map<int, int> &trueHitMap);
+      bool IsEM(const art::Ptr<simb::MCParticle> &mcParticle);
+      int GetLeadEMTrackID(const lar_pandora::MCParticleMap &mcParticleMap, const art::Ptr<simb::MCParticle> &mcParticle);
+      void FillSliceMap(art::Event& e, std::map<int, int> &sliceMap);
+      int GetTrueNuSliceID(art::Event const& evt, const std::map<int, int> &trueHitMap, 
+          const int muonTrackID, const int protonTrackID, const int pionTrackID, const int gammaTrackID);
       void CollectChildren(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, lar_pandora::PFParticleMap &pfparticleMap,
           std::vector<art::Ptr<recob::PFParticle>> &collectedParticles, std::vector<art::Ptr<recob::Hit>> &collectedHits);
       void CollectHits(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, std::vector<art::Ptr<recob::Hit>> &hits);
-      void GetTruthMatch(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, const std::vector<art::Ptr<simb::MCParticle>> &mcParticleVector, 
-          simb::MCParticle const* &matchedParticle);
+      bool GetMatchedTrackID(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, 
+          const std::map<int, int> &trueHitMap, int &matchedTrackID);
       bool GetDecayVertex(art::Event& e, std::vector<art::Ptr<recob::PFParticle>> &protonPFParticles, 
           std::vector<art::Ptr<recob::PFParticle>> &pionPFParticles, double &decayVertexX, double &decayVertexY, double &decayVertexZ);
    private:
@@ -114,6 +129,7 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    G4Truth G4T = G4_SM->GetG4Info();
 
    bool isSignalSigmaZero = false;
+   int mcTruthIndex = -1;
 
    for (int i = 0; i < GenT.NMCTruths; i++)
    {
@@ -133,11 +149,13 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
            continue;
 
        isSignalSigmaZero = true;
+       mcTruthIndex = i;
+       break;
    }
-
    
    std::cout << "isSignalSigmaZero: " << (isSignalSigmaZero ? "yes" : "no") << std::endl;
-   /*
+
+   // Put empty products into file if not signal   
    if (!isSignalSigmaZero)
    {
        e.put(std::move(outputVertex));
@@ -147,20 +165,10 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
        e.put(std::move(outputSliceHitAssoc));
        return;
    }
-   */
+   
    ///////////////////////////////////////////
    // Now check whether we need to modify the reco
    ///////////////////////////////////////////
-
-   // Get event PFParticles
-   art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
-   std::vector<art::Ptr<recob::PFParticle>> pfparticleVector;
-
-   art::InputTag pfpInputTag(f_PFParticleLabel, f_PFPInstanceName);
-   if (!e.getByLabel(pfpInputTag, pfparticleHandle))
-       throw cet::exception("LambdaVertexProducer") << "No PFParticle Data Products Found!" << std::endl;
-
-   art::fill_ptr_vector(pfparticleVector, pfparticleHandle);
 
    // For truth matching
    art::Handle<std::vector<simb::MCParticle>> mcParticleHandle;
@@ -174,72 +182,83 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    lar_pandora::MCParticleMap mcParticleMap;
    lar_pandora::LArPandoraHelper::BuildMCParticleMap(mcParticleVector, mcParticleMap);
 
+   int muonTrackID(-1), protonTrackID(-1), pionTrackID(-1), gammaTrackID(-1);
+
+   if (!IdentifySignalParticles(G4T, mcTruthIndex, mcParticleMap, muonTrackID, protonTrackID, pionTrackID, gammaTrackID))
+   {
+       e.put(std::move(outputVertex));
+       e.put(std::move(outputHitVector));
+       e.put(std::move(outputPFParticleVector));
+       e.put(std::move(outputSliceVertexAssoc));
+       e.put(std::move(outputSliceHitAssoc));
+       return;
+   }
+
+   std::map<int, int> trueHitMap;
+   FillMCParticleHitInfo(e, mcParticleMap, trueHitMap);
+
+   int trueNuSliceID(GetTrueNuSliceID(e, trueHitMap, muonTrackID, protonTrackID, pionTrackID, gammaTrackID));
+
+   if (trueNuSliceID == -1)
+   {
+       e.put(std::move(outputVertex));
+       e.put(std::move(outputHitVector));
+       e.put(std::move(outputPFParticleVector));
+       e.put(std::move(outputSliceVertexAssoc));
+       e.put(std::move(outputSliceHitAssoc));
+       return;
+   }
+
+   // Get event PFParticles
+   art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
+   std::vector<art::Ptr<recob::PFParticle>> pfparticleVector;
+
+   art::InputTag pfpInputTag(f_PFParticleLabel, f_PFPInstanceName);
+   if (!e.getByLabel(pfpInputTag, pfparticleHandle))
+       throw cet::exception("LambdaVertexProducer") << "No PFParticle Data Products Found!" << std::endl;
+
+   art::fill_ptr_vector(pfparticleVector, pfparticleHandle);
+
    // Now fill the Pandora PFParticle map
    lar_pandora::PFParticleMap pfparticleMap;
    lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfparticleVector, pfparticleMap);
 
-   // Now search for the PFParticle matches
+   // Now fill the slice map
+   std::map<int, int> sliceMap;
+   FillSliceMap(e, sliceMap);
+
+   // Now search for the PFParticle matches (look only in the true neutrino slice!)
    std::vector<art::Ptr<recob::PFParticle>> pionPFParticles;
    std::vector<art::Ptr<recob::PFParticle>> protonPFParticles;
 
-   for (const art::Ptr<recob::PFParticle> pfparticle : pfparticleVector)
+   // Get true nu slice pfps...
+   art::InputTag sliceInputTag(f_PFParticleLabel, f_PFPInstanceName);
+   art::Handle<std::vector<recob::Slice>> sliceHandle;
+
+   if (!e.getByLabel(sliceInputTag, sliceHandle))
+       throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+   art::FindManyP<recob::PFParticle> pfpAssoc = art::FindManyP<recob::PFParticle>(sliceHandle, e, sliceInputTag);
+   std::vector<art::Ptr<recob::PFParticle>> nuSlicePFPs = pfpAssoc.at(sliceMap[trueNuSliceID]);
+
+   for (const art::Ptr<recob::PFParticle> pfparticle : nuSlicePFPs)
    {
-       // Make sure that particle is in the neutrino hierarchy (there should only be one)
+       // Make sure that particle is in the neutrino hierarchy
        if (lar_pandora::LArPandoraHelper::GetParentNeutrino(pfparticleMap, pfparticle) == 0)
            continue;
 
-       // Truth matching 
-       simb::MCParticle const* matchedParticle = NULL;
-       this->GetTruthMatch(e, pfparticle, mcParticleVector, matchedParticle);
-
-       // The neutrino will have zero hits..
-       if (!matchedParticle)
+       int matchedTrackID(-1);
+       if (!GetMatchedTrackID(e, pfparticle, trueHitMap, matchedTrackID))
            continue;
 
-       // If its an EM particle, we have to move up the EM hierarchy (who designs this, honestly)
-       art::Ptr<simb::MCParticle> motherMCParticle = art::Ptr(art::ProductID(10000), matchedParticle, art::Ptr<simb::MCParticle>::key_type(1000));
-
-       bool found = true;
-       do
-       {
-           const int motherID = motherMCParticle->Mother();
-
-           if (mcParticleMap.find(motherID) == mcParticleMap.end())
-           {
-               found = false;
-               break;
-           }
-
-           motherMCParticle = mcParticleMap.at(motherID);
-       }
-       while ((std::abs(motherMCParticle->PdgCode()) == 11) || (motherMCParticle->PdgCode() == 22));
-
-       if (!found)
-       {
-           std::cout << "couldn't find mother for: " << matchedParticle->PdgCode() << std::endl;
-           continue;
-       }
-
-
-       int motherPDG = motherMCParticle->PdgCode();
-
-       std::cout << "matchedParticle->PdgCode(): " << matchedParticle->PdgCode() << std::endl;
-       std::cout << "matchedParticle->Mother(): " << motherPDG << std::endl;
-
-
-       // Now check if it is one of our lambda0 decay products...
-       if (motherPDG != 3122)
-           continue;
-
-       if (matchedParticle->PdgCode() == 2212)
+       if (matchedTrackID == protonTrackID)
            protonPFParticles.push_back(pfparticle);
-       else if(matchedParticle->PdgCode() == -211)
+       else if(matchedTrackID == pionTrackID)
            pionPFParticles.push_back(pfparticle);
    }
 
    const bool foundPion = (pionPFParticles.size() != 0);
    const bool foundProton = (protonPFParticles.size() != 0);
-   //const bool modifyReco = (foundPion && !foundProton) || (!foundPion && foundProton);
    const bool modifyReco = foundPion || foundProton;
 
    if (!modifyReco)
@@ -263,26 +282,17 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    for (art::Ptr<recob::PFParticle> pfparticle : pionPFParticles)
        this->CollectChildren(e, pfparticle, pfparticleMap, lambdaHierarachyPFParticles, lambdaHierarachyHits);
 
-   // Get true vertex
-   /*
-   simb::MCParticle const* matchedDecayPrimary = NULL;
-
-   if (foundProton)
-       this->GetTruthMatch(e, protonPFParticles.front(), mcParticleVector, matchedDecayPrimary);
-
-   if (foundPion)
-       this->GetTruthMatch(e, pionPFParticles.front(), mcParticleVector, matchedDecayPrimary);
-
-   std::cout << "evt.isRealData(): " << e.isRealData() << std::endl;
-    std::cout << "matchedDecayPrimary->Vx(): " << matchedDecayPrimary->Vx()<< std::endl;
-    std::cout << "matchedDecayPrimary->Vy(): " << matchedDecayPrimary->Vy()<< std::endl;
-    std::cout << "matchedDecayPrimary->Vz(): " << matchedDecayPrimary->Vz()<< std::endl;
-   */
-
     double decayVertexX(-999.0), decayVertexY(-999.0), decayVertexZ(-999.0);
     if (!this->GetDecayVertex(e, protonPFParticles, pionPFParticles, decayVertexX, decayVertexY, decayVertexZ))
     {
         std::cout << "could not find decay vertex..." << std::endl;
+
+        e.put(std::move(outputVertex));
+        e.put(std::move(outputHitVector));
+        e.put(std::move(outputPFParticleVector));
+        e.put(std::move(outputSliceVertexAssoc));
+        e.put(std::move(outputSliceHitAssoc));
+
         return;
     }
 
@@ -303,19 +313,7 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    }
 
    for (const art::Ptr<recob::PFParticle> pfparticle : lambdaHierarachyPFParticles)
-   {
        outputPFParticleVector->push_back(pfparticle.key());
-       std::cout << "Generation: " << lar_pandora::LArPandoraHelper::GetGeneration(pfparticleMap, pfparticle) << std::endl;
-       std::cout << "pfparticle: " << pfparticle << std::endl;
-       std::cout << "pfparticle.key(): " << pfparticle.key() << std::endl;
-   }
-
-   // Now we need the true vertex.. 
-   std::cout << "protonPFParticles.size(): " << protonPFParticles.size() << std::endl;
-   std::cout << "pionPFParticles.size(): " << pionPFParticles.size() << std::endl;
-   std::cout << "lambdaHierarachyPFParticles.size(): " << lambdaHierarachyPFParticles.size() << std::endl;
-   std::cout << "lambdaHierarachyHits.size(): " << lambdaHierarachyHits.size() << std::endl;
-   std::cout << "outputHitVector.size(): " << outputHitVector->size() << std::endl;
 
    e.put(std::move(outputVertex));
    e.put(std::move(outputHitVector));
@@ -326,6 +324,213 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
    return;
 
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+bool hyperon::LambdaVertexProducer::IdentifySignalParticles(const G4Truth &G4Truth, const int mcTruthIndex, 
+    const lar_pandora::MCParticleMap &mcParticleMap, int &muonTrackID, int &protonTrackID, int &pionTrackID, 
+    int &gammaTrackID)
+{
+    if (!IdentifySignalParticle(G4Truth, mcTruthIndex, mcParticleMap, MUON_INDEX, muonTrackID))
+    {
+        std::cout << "Couldn't find MC muon :(" << std::endl;
+        return false;
+    }
+
+    if (!IdentifySignalParticle(G4Truth, mcTruthIndex, mcParticleMap, PROTON_INDEX, protonTrackID))
+    {
+        std::cout << "Couldn't find MC proton :(" << std::endl;
+        return false;
+    }
+
+    if (!IdentifySignalParticle(G4Truth, mcTruthIndex, mcParticleMap, PION_INDEX, pionTrackID))
+    {
+        std::cout << "Couldn't find MC pion :(" << std::endl;
+        return false;
+    }
+
+    if (!IdentifySignalParticle(G4Truth, mcTruthIndex, mcParticleMap, GAMMA_INDEX, gammaTrackID))
+    {
+        std::cout << "Couldn't find MC gamma :(" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+bool hyperon::LambdaVertexProducer::IdentifySignalParticle(const G4Truth &G4Truth, const int mcTruthIndex, 
+    const lar_pandora::MCParticleMap &mcParticleMap, const int particleTypeIndex, int &particleTrackID)
+{
+    const std::vector<SimParticle> &simParticles(particleTypeIndex == MUON_INDEX ? G4Truth.Lepton : 
+        particleTypeIndex == PROTON_INDEX ? G4Truth.Decay : particleTypeIndex == PION_INDEX ? G4Truth.Decay : G4Truth.SigmaZeroDecayPhoton);
+
+    const int pdg(particleTypeIndex == MUON_INDEX ? -13 : particleTypeIndex == PROTON_INDEX ? 2212 : particleTypeIndex == PION_INDEX ? -211 : 22);
+
+    bool found = false;
+
+    for (const SimParticle &simParticle : simParticles)
+    {
+        if (simParticle.MCTruthIndex != mcTruthIndex)
+            continue;
+
+        if (simParticle.PDG != pdg)
+            continue;
+
+        if (mcParticleMap.find(simParticle.ArtID) == mcParticleMap.end())
+            continue;
+
+        found = true;
+        particleTrackID = simParticle.ArtID;
+        break;
+    }
+
+    return found;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::LambdaVertexProducer::FillMCParticleHitInfo(art::Event const& evt, const lar_pandora::MCParticleMap &mcParticleMap, 
+    std::map<int, int> &trueHitMap)
+{
+    // Get event hits
+    art::Handle<std::vector<recob::Hit>> hitHandle;
+    std::vector<art::Ptr<recob::Hit>> hitVector;
+
+    if (!evt.getByLabel(f_HitLabel, hitHandle))
+        throw cet::exception("LambdaVertexProducer") << "No Hit Data Products Found!" << std::endl;
+
+    art::fill_ptr_vector(hitVector, hitHandle);
+
+    // Get backtracker info
+    art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData> assocMCPart = art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData>(hitHandle, evt, f_TruthMatchingLabel);
+
+     // Truth match to found IDs
+    for (unsigned int hitIndex = 0; hitIndex < hitVector.size(); hitIndex++)
+    {
+        const art::Ptr<recob::Hit> &hit = hitVector[hitIndex];
+        const std::vector<art::Ptr<simb::MCParticle>> &matchedMCParticles = assocMCPart.at(hit.key());
+        auto matchedDatas = assocMCPart.data(hit.key());
+
+        for (unsigned int mcParticleIndex = 0; mcParticleIndex < matchedMCParticles.size(); ++mcParticleIndex)
+        {
+            const art::Ptr<simb::MCParticle> &matchedMCParticle = matchedMCParticles.at(mcParticleIndex);
+            auto matchedData = matchedDatas.at(mcParticleIndex);
+
+            if (matchedData->isMaxIDE != 1)
+                continue;
+
+            const int trackID = IsEM(matchedMCParticle) ? GetLeadEMTrackID(mcParticleMap, matchedMCParticle) : matchedMCParticle->TrackId();
+
+            trueHitMap[hit.key()] = trackID;
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+bool hyperon::LambdaVertexProducer::IsEM(const art::Ptr<simb::MCParticle> &mcParticle)
+{
+    return ((std::abs(mcParticle->PdgCode()) == 11) || (mcParticle->PdgCode() == 22));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+// If its an EM particle, we have to move up the EM hierarchy
+int hyperon::LambdaVertexProducer::GetLeadEMTrackID(const lar_pandora::MCParticleMap &mcParticleMap, const art::Ptr<simb::MCParticle> &mcParticle)
+{
+    int trackID = mcParticle->TrackId();
+    art::Ptr<simb::MCParticle> motherMCParticle = mcParticle;
+
+    do
+    {
+        trackID = motherMCParticle->TrackId();
+        const int motherID = motherMCParticle->Mother();
+
+        if (mcParticleMap.find(motherID) == mcParticleMap.end())
+            break;
+
+        motherMCParticle = mcParticleMap.at(motherID);
+    }
+    while (IsEM(motherMCParticle));
+
+    return trackID;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::LambdaVertexProducer::FillSliceMap(art::Event& e, std::map<int, int> &sliceMap)
+{
+   art::InputTag sliceInputTag(f_PFParticleLabel, f_PFPInstanceName);
+   art::Handle<std::vector<recob::Slice>> sliceHandle;
+   std::vector<art::Ptr<recob::Slice>> sliceVector;
+
+   if (!e.getByLabel(sliceInputTag, sliceHandle))
+       throw cet::exception("LambdaVertexProducer") << "No Slice Data Products Found!" << std::endl;
+
+   art::fill_ptr_vector(sliceVector, sliceHandle);
+
+   for (art::Ptr<recob::Slice> &slice : sliceVector)
+        sliceMap[slice->ID()] = slice.key();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int hyperon::LambdaVertexProducer::GetTrueNuSliceID(art::Event const& evt, const std::map<int, int> &trueHitMap, 
+    const int muonTrackID, const int protonTrackID, const int pionTrackID, const int gammaTrackID)
+{
+    // Get slice information
+    art::InputTag sliceInputTag(f_PFParticleLabel, f_PFPInstanceName);
+    art::Handle<std::vector<recob::Slice>> sliceHandle;
+    std::vector<art::Ptr<recob::Slice>> sliceVector;
+
+    if (!evt.getByLabel(sliceInputTag, sliceHandle))
+        throw cet::exception("LambdaVertexProducer") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::Hit> hitAssoc = art::FindManyP<recob::Hit>(sliceHandle, evt, sliceInputTag);
+    art::fill_ptr_vector(sliceVector, sliceHandle);
+
+    // Find slice that contains the nu hierarchy hits
+    std::map<int, int> sliceSignalHitMap;
+
+    int trueNuSliceID(-1);
+    int highestHitNumber(-1);
+    int highestHitSliceID(-1);
+
+    for (art::Ptr<recob::Slice> &slice : sliceVector)
+    {
+        sliceSignalHitMap[slice->ID()] = 0;
+
+        const std::vector<art::Ptr<recob::Hit>> &sliceHits(hitAssoc.at(slice.key()));
+
+        for (const art::Ptr<recob::Hit> &sliceHit : sliceHits)
+        {
+            if (trueHitMap.find(sliceHit.key()) == trueHitMap.end())
+                continue;
+
+            int trackID = trueHitMap.at(sliceHit.key());
+
+            if ((trackID == muonTrackID) || (trackID == protonTrackID) || 
+                (trackID == pionTrackID) || (trackID == gammaTrackID))
+            {
+                ++sliceSignalHitMap[slice->ID()]; 
+            }
+        }
+
+        if ((sliceSignalHitMap[slice->ID()] > highestHitNumber) && (sliceSignalHitMap[slice->ID()] > 0))
+        {
+            highestHitNumber = sliceSignalHitMap[slice->ID()];
+            highestHitSliceID = slice->ID();
+        }
+    }
+
+    if (highestHitSliceID >= 0)
+        trueNuSliceID = highestHitSliceID;
+
+    return trueNuSliceID;
+}
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -386,17 +591,11 @@ void hyperon::LambdaVertexProducer::CollectHits(art::Event& e, const art::Ptr<re
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void hyperon::LambdaVertexProducer::GetTruthMatch(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, 
-   const std::vector<art::Ptr<simb::MCParticle>> &mcParticleVector, simb::MCParticle const* &matchedParticle)
+bool hyperon::LambdaVertexProducer::GetMatchedTrackID(art::Event& e, const art::Ptr<recob::PFParticle> &pfparticle, 
+    const std::map<int, int> &trueHitMap, int &matchedTrackID)   
 {
-   art::Handle<std::vector<recob::Hit>> hitHandle;
-
-   if (!e.getByLabel(f_HitLabel, hitHandle)) 
-       throw cet::exception("LambdaVertexProducer") << "No Hit Data Products Found!" << std::endl;
-
-   art::FindMany<simb::MCParticle,anab::BackTrackerHitMatchingData> truthMatching = art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>(hitHandle, e, f_TruthMatchingLabel);
-
     int nMaxHits = -1;
+    bool matchFound = false;
     std::unordered_map<int, int> mcParticleToHitsMap;
 
     std::vector<art::Ptr<recob::Hit>> hits;
@@ -404,25 +603,23 @@ void hyperon::LambdaVertexProducer::GetTruthMatch(art::Event& e, const art::Ptr<
 
     for (const art::Ptr<recob::Hit> &hit : hits)
     {
-        std::vector<simb::MCParticle const*> mcParticleVector;
-        std::vector<anab::BackTrackerHitMatchingData const*> matchInfoVector;
+        if (trueHitMap.find(hit.key()) == trueHitMap.end())
+            continue;
 
-        truthMatching.get(hit.key(), mcParticleVector, matchInfoVector);
+        int thisTrackID = trueHitMap.at(hit.key());
 
-        for (simb::MCParticle const* pMCParticle : mcParticleVector)
+        mcParticleToHitsMap[thisTrackID]++;
+
+        if (mcParticleToHitsMap[thisTrackID] > nMaxHits)
         {
-            mcParticleToHitsMap[pMCParticle->TrackId()]++;
-
-            if (mcParticleToHitsMap[pMCParticle->TrackId()] > nMaxHits)
-            {
-                nMaxHits = mcParticleToHitsMap[pMCParticle->TrackId()];
-                matchedParticle = pMCParticle;
-            }
+            nMaxHits = mcParticleToHitsMap[thisTrackID];
+            matchedTrackID = thisTrackID;
+            matchFound = true;
         }
     }
-}
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    return matchFound;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

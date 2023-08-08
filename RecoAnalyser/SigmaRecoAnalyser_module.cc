@@ -91,7 +91,7 @@ public:
     void FillMCSliceInfo(art::Event const& evt);
     void PerformMatching(art::Event const& evt);
     void FindMCParticleMatches(art::Event const& evt, const int particleIndex, const int nuSliceID,
-        MatchingMap &nuSliceMatchingMap, MatchingMap &otherSliceMatchingMap);
+        MatchingMap &nuSliceMatchingMap, MatchingMap &nuSliceMatchingMap_Repass, MatchingMap &otherSliceMatchingMap);
     void CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
         std::vector<art::Ptr<recob::Hit>> &hits);
     void OrderMatchingMap(MatchingMap &matchingMap);
@@ -111,6 +111,11 @@ private:
     std::string m_ClusterLabel;
     std::string m_ClusterInstance;
     //std::string m_SliceLabel;
+    std::string m_ModifiedPFParticleLabel;
+    std::string m_RepassPFParticleLabel;
+
+    // Does input include modified reco?
+    bool m_modifiedRecoInput;
 
     // Debug Info?
     bool m_debugMode;
@@ -183,6 +188,7 @@ private:
     int m_protonContaminantHitsRecoSlice;
 
     // Reco stuff - best match stuff
+    std::vector<bool> m_trueBestMatchRecoRepass;
     std::vector<double> m_trueBestMatchCompleteness;
     std::vector<double> m_trueBestMatchPurity;
     std::vector<double> m_trueBestMatchTrackScore;
@@ -193,6 +199,7 @@ private:
     std::vector<double> m_trueBestMatchRecoVertexZ;
     std::vector<double> m_trueBestMatchNuVertexSep;
 
+    std::vector<bool> m_recoBestMatchRecoRepass;
     std::vector<double> m_recoBestMatchCompleteness;
     std::vector<double> m_recoBestMatchPurity;
     std::vector<double> m_recoBestMatchTrackScore;
@@ -213,14 +220,18 @@ private:
     // Linking Self() -> PFParticle
     lar_pandora::PFParticleMap m_pfpMap;
     lar_pandora::PFParticleMap m_pfpMap_AO;
+    lar_pandora::PFParticleMap m_pfpMap_Repass;
 
     // Linking slice ID -> slice key
     std::map<int, int> m_sliceMap_AO;
+    std::map<int, int> m_sliceMap_Repass;
 
     // Matching map
     MatchingMap m_trueNuSliceMatchingMap;
+    MatchingMap m_trueNuSliceMatchingMap_Repass;
     MatchingMap m_trueOtherSliceMatchingMap;
     MatchingMap m_recoNuSliceMatchingMap;
+    MatchingMap m_recoNuSliceMatchingMap_Repass;
     MatchingMap m_recoOtherSliceMatchingMap;
 };
 
@@ -238,6 +249,9 @@ hyperon::SigmaRecoAnalyser::SigmaRecoAnalyser(fhicl::ParameterSet const& pset)
     m_ClusterLabel(pset.get<std::string>("ClusterLabel")),
     m_ClusterInstance(pset.get<std::string>("ClusterInstance", "")),
     //m_SliceLabel(pset.get<std::string>("SliceLabel")),
+    m_ModifiedPFParticleLabel(pset.get<std::string>("ModifiedPFParticleLabel", "")),
+    m_RepassPFParticleLabel(pset.get<std::string>("RepassPFParticleLabel", "")),
+    m_modifiedRecoInput(pset.get<bool>("ModifiedRecoInput")),
     m_debugMode(pset.get<bool>("DebugMode"))
 {
 }
@@ -413,6 +427,24 @@ void hyperon::SigmaRecoAnalyser::FillPandoraMaps(art::Event const& evt)
 
     for (art::Ptr<recob::Slice> &slice_AO : sliceVector_AO)
         m_sliceMap_AO[slice_AO->ID()] = slice_AO.key();
+
+    // Repass PFP Map
+    if (m_modifiedRecoInput)
+    {
+        art::Handle<std::vector<recob::PFParticle>> pfpHandle_Repass;
+        std::vector<art::Ptr<recob::PFParticle>> pfpVector_Repass;
+
+        art::InputTag pfpInputTag_Repass("pandoraJam", "");
+
+        if (!evt.getByLabel(pfpInputTag_Repass, pfpHandle_Repass))
+            throw cet::exception("SigmaRecoAnalyser") << "No Repass PFParticle Data Products Found!" << std::endl;
+
+        art::fill_ptr_vector(pfpVector_Repass, pfpHandle_Repass);
+
+        lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfpVector_Repass, m_pfpMap_Repass);
+
+        if (m_debugMode) std::cout << "m_pfpMap_Repass.size(): " << m_pfpMap_Repass.size() << std::endl;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -693,13 +725,15 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
     // Fill matching map
     for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
     {
-        FindMCParticleMatches(evt, particleTypeIndex, m_trueNuSliceID, m_trueNuSliceMatchingMap, m_trueOtherSliceMatchingMap);
-        FindMCParticleMatches(evt, particleTypeIndex, m_recoNuSliceID, m_recoNuSliceMatchingMap, m_recoOtherSliceMatchingMap);
+        FindMCParticleMatches(evt, particleTypeIndex, m_trueNuSliceID, m_trueNuSliceMatchingMap, m_trueNuSliceMatchingMap_Repass, m_trueOtherSliceMatchingMap);
+        FindMCParticleMatches(evt, particleTypeIndex, m_recoNuSliceID, m_recoNuSliceMatchingMap, m_recoNuSliceMatchingMap_Repass, m_recoOtherSliceMatchingMap);
     }
 
     OrderMatchingMap(m_trueNuSliceMatchingMap);
+    OrderMatchingMap(m_trueNuSliceMatchingMap_Repass);
     OrderMatchingMap(m_trueOtherSliceMatchingMap);
     OrderMatchingMap(m_recoNuSliceMatchingMap);
+    OrderMatchingMap(m_recoNuSliceMatchingMap_Repass);
     OrderMatchingMap(m_recoOtherSliceMatchingMap);
     
     if (m_debugMode)
@@ -707,6 +741,17 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
         std::cout << "Reco neutrino slice matching map: " << std::endl;
 
         for (auto &entry : m_recoNuSliceMatchingMap)
+        {
+            std::cout << "index: " << entry.first << std::endl;
+            std::cout << entry.second.size() << " matches" << std::endl;
+
+            for (auto &pair : entry.second)
+                std::cout << "(PFParticle ID: " << pair.first << ", shared hits: " << pair.second << std::endl;
+        }
+
+        std::cout << "Reco neutrino slice matching map (Reco repass): " << std::endl;
+
+        for (auto &entry : m_recoNuSliceMatchingMap_Repass)
         {
             std::cout << "index: " << entry.first << std::endl;
             std::cout << entry.second.size() << " matches" << std::endl;
@@ -733,7 +778,7 @@ void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, const int particleIndex, const int nuSliceID, 
-    MatchingMap &nuSliceMatchingMap, MatchingMap &otherSliceMatchingMap)
+    MatchingMap &nuSliceMatchingMap, MatchingMap &nuSliceMatchingMap_Repass, MatchingMap &otherSliceMatchingMap)
 {
     // Slice vector - All outcomes
     art::InputTag sliceInputTag_AO("pandoraPatRec", "allOutcomes");
@@ -746,6 +791,29 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
     art::FindManyP<recob::PFParticle> pfpAssoc_AO = art::FindManyP<recob::PFParticle>(sliceHandle_AO, evt, sliceInputTag_AO);
     art::fill_ptr_vector(sliceVector_AO, sliceHandle_AO);
 
+    // Modifed reconstruction
+    art::Handle<std::vector<int>> pfpHandle_Modified;
+
+    if (m_modifiedRecoInput)
+    {
+        if (!evt.getByLabel("pandoraJam", pfpHandle_Modified))
+            throw cet::exception("SigmaRecoAnalyser") << "No Modified PFParticle Data Products Found!" << std::endl;
+    }
+
+    // Repass Reconstruction 
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle_Repass;
+    std::vector<art::Ptr<recob::PFParticle>> pfpVector_Repass;
+
+    if (m_modifiedRecoInput)
+    {
+        art::InputTag pfpInputTag_Repass("pandoraJam", "");
+
+        if (!evt.getByLabel(pfpInputTag_Repass, pfpHandle_Repass))
+            throw cet::exception("SigmaRecoAnalyser") << "No Repass PFParticle Data Products Found!" << std::endl;
+
+        art::fill_ptr_vector(pfpVector_Repass, pfpHandle_Repass);
+    }
+
     // Search in the neutrino slice first...
     bool foundInNuSlice = false;
 
@@ -757,6 +825,23 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
         if (!lar_pandora::LArPandoraHelper::IsNeutrino(lar_pandora::LArPandoraHelper::GetParentPFParticle(m_pfpMap_AO, pfp_AO)))
             continue;
 
+        if (m_modifiedRecoInput)
+        {
+            bool modified = false;
+
+            for (long unsigned int i = 0; i < pfpHandle_Modified.product()->size(); ++i)
+            {
+                if (static_cast<long unsigned int>(pfpHandle_Modified.product()->at(i)) == pfp_AO.key())
+                {
+                    modified = true;
+                    break;
+                }
+            }
+
+            if (modified)
+                continue;
+        }
+        
         std::map<int, int> trackIDToHitMap;
 
         std::vector<art::Ptr<recob::Hit>> pfpHits;
@@ -793,6 +878,49 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
         if (maxOwnerID == m_trueParticleID[particleIndex])
         {
             nuSliceMatchingMap[particleIndex].push_back(std::pair<int, int>(pfp_AO->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
+            foundInNuSlice = true;
+        }
+    }
+
+    // Search in the repass PFParticles...
+    for (const art::Ptr<recob::PFParticle> &pfp_Repass : pfpVector_Repass)
+    {
+        std::map<int, int> trackIDToHitMap;
+
+        std::vector<art::Ptr<recob::Hit>> pfpHits;
+        CollectHitsFromClusters(evt, pfp_Repass, pfpHits, "pandoraJam", "");
+
+        for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
+        {
+            if (m_trueHitMap.find(pfpHit.key()) == m_trueHitMap.end())
+                continue;
+
+            const int trackID(m_trueHitMap.at(pfpHit.key()));
+
+            if (trackIDToHitMap.find(trackID) == trackIDToHitMap.end())
+                trackIDToHitMap[trackID] = 1;
+            else
+                ++trackIDToHitMap[trackID];
+        }
+
+        if (trackIDToHitMap.find(m_trueParticleID[particleIndex]) == trackIDToHitMap.end())
+            continue;
+
+        int maxHits = -1;
+        int maxOwnerID = -1;
+
+        for (auto &entry : trackIDToHitMap)
+        {
+            if ((entry.second > maxHits) || ((entry.second == maxHits) && (entry.first > maxOwnerID)))
+            {
+                maxHits = entry.second;
+                maxOwnerID = entry.first;
+            }
+        }
+
+        if (maxOwnerID == m_trueParticleID[particleIndex])
+        {
+            nuSliceMatchingMap_Repass[particleIndex].push_back(std::pair<int, int>(pfp_Repass->Self(), trackIDToHitMap[m_trueParticleID[particleIndex]]));
             foundInNuSlice = true;
         }
     }
@@ -952,6 +1080,16 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
     art::FindManyP<recob::Vertex> vertexAssoc_AO = art::FindManyP<recob::Vertex>(pfparticleHandle_AO, evt, pfpInputTag_AO);
     art::FindManyP<recob::Slice> sliceAssoc_AO = art::FindManyP<recob::Slice>(pfparticleHandle_AO, evt, pfpInputTag_AO);
 
+    // Repass output
+    art::InputTag pfpInputTag_Repass("pandoraJam", "");
+    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle_Repass;
+
+    if (m_modifiedRecoInput)
+    {
+        if (!evt.getByLabel(pfpInputTag_Repass, pfparticleHandle_Repass))
+            throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+    }
+
     int nParticlesFoundInNuSlice = 0;
     int nParticlesFoundInOtherSlice = 0;
 
@@ -960,9 +1098,10 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         if (m_debugMode) std::cout << "--------------- particleTypeIndex: " << particleTypeIndex << std::endl;
 
         const std::vector<std::pair<int, int>> &nuSliceMatchPairs(isTrueNuSlice ? m_trueNuSliceMatchingMap[particleTypeIndex] : m_recoNuSliceMatchingMap[particleTypeIndex]);
+        const std::vector<std::pair<int, int>> &nuSliceMatchPairs_Repass(isTrueNuSlice ? m_trueNuSliceMatchingMap_Repass[particleTypeIndex] : m_recoNuSliceMatchingMap_Repass[particleTypeIndex]);
         const std::vector<std::pair<int, int>> &otherSliceMatchPairs(isTrueNuSlice ? m_trueOtherSliceMatchingMap[particleTypeIndex] : m_recoOtherSliceMatchingMap[particleTypeIndex]);
 
-        const int nuSliceMatches = nuSliceMatchPairs.size();
+        const int nuSliceMatches = nuSliceMatchPairs.size() + nuSliceMatchPairs_Repass.size();
         const int otherSliceMatches = otherSliceMatchPairs.size();
 
         bool foundMatchInNuSlice = (nuSliceMatches != 0);
@@ -996,38 +1135,71 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         if (!foundMatchInNuSlice && foundMatchInOtherSlice)
             ++nParticlesFoundInOtherSlice;
 
-        const std::pair<int, int> &matchPair(foundMatchInNuSlice ? nuSliceMatchPairs.front() : otherSliceMatchPairs.front());
-        const art::Ptr<recob::PFParticle> pfp(m_pfpMap_AO.at(matchPair.first));
+        const bool isRepassOutput((nuSliceMatchPairs_Repass.size() != 0) && ((nuSliceMatchPairs.size() == 0) || (nuSliceMatchPairs.front().second < nuSliceMatchPairs_Repass.front().second)));
+
+        const std::pair<int, int> &matchPair(foundMatchInNuSlice ? (isRepassOutput ? nuSliceMatchPairs_Repass.front() : nuSliceMatchPairs.front()) : otherSliceMatchPairs.front());
+        const art::Ptr<recob::PFParticle> pfp(isRepassOutput ? m_pfpMap_Repass.at(matchPair.first) : m_pfpMap_AO.at(matchPair.first));
 
         //////////////////////////////////////
         // Now fill out bestMatchPfo info
         //////////////////////////////////////
         // Completeness & Purity
         std::vector<art::Ptr<recob::Hit>> pfpHits;
-        CollectHitsFromClusters(evt, pfp, pfpHits, "pandoraPatRec", "allOutcomes");
+        CollectHitsFromClusters(evt, pfp, pfpHits, isRepassOutput ? "pandoraJam" : "pandoraPatRec", isRepassOutput ? "" : "allOutcomes");
 
         const double completeness(static_cast<double>(matchPair.second) / static_cast<double>(m_nTrueHits[particleTypeIndex]));
         const double purity(static_cast<double>(matchPair.second) / static_cast<double>(pfpHits.size()));
 
         // Track score
-        std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn_AO.at(pfp.key());
-
         double trackScore(DEFAULT_DOUBLE);
 
-        if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
-            trackScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
+        if (isRepassOutput)
+        {
+            art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn_Repass = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle_Repass, evt, pfpInputTag_Repass);
+
+            std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn_Repass.at(pfp.key());
+
+            if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
+                trackScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
+        }
+        else
+        {
+            std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn_AO.at(pfp.key());
+
+            if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
+                trackScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
+        }
 
         // Slice ID
-        std::vector<art::Ptr<recob::Slice>> slices = sliceAssoc_AO.at(pfp.key());
-
         int sliceID(DEFAULT_INT);
-        if (!slices.empty()) sliceID = slices[0]->ID();
+
+        if (isRepassOutput)
+        {
+            art::FindManyP<recob::Slice> sliceAssoc_Repass = art::FindManyP<recob::Slice>(pfparticleHandle_Repass, evt, pfpInputTag_Repass);
+            std::vector<art::Ptr<recob::Slice>> slices = sliceAssoc_Repass.at(pfp.key());
+            if (!slices.empty()) sliceID = slices[0]->ID();
+        }
+        else
+        {
+            std::vector<art::Ptr<recob::Slice>> slices = sliceAssoc_AO.at(pfp.key());
+            if (!slices.empty()) sliceID = slices[0]->ID();
+        }
 
         // Generation
-        int generation(lar_pandora::LArPandoraHelper::GetGeneration(m_pfpMap_AO, pfp));
+        int generation(lar_pandora::LArPandoraHelper::GetGeneration(isRepassOutput ? m_pfpMap_Repass : m_pfpMap_AO, pfp));
 
         // Vertex info
-        std::vector<art::Ptr<recob::Vertex>> vertex = vertexAssoc_AO.at(pfp.key());
+        std::vector<art::Ptr<recob::Vertex>> vertex;
+
+        if (isRepassOutput)
+        {
+            art::FindManyP<recob::Vertex> vertexAssoc_Repass = art::FindManyP<recob::Vertex>(pfparticleHandle_Repass, evt, pfpInputTag_Repass);
+            vertex = vertexAssoc_Repass.at(pfp.key());
+        }
+        else
+        {
+            std::vector<art::Ptr<recob::Vertex>> vertex = vertexAssoc_AO.at(pfp.key());
+        }
 
         double vertexX(DEFAULT_DOUBLE), vertexY(DEFAULT_DOUBLE), vertexZ(DEFAULT_DOUBLE);
         double nuVertexSep(DEFAULT_DOUBLE);
@@ -1047,6 +1219,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
 
         if (isTrueNuSlice)
         {
+            m_trueBestMatchRecoRepass[particleTypeIndex] = isRepassOutput;
             m_trueBestMatchCompleteness[particleTypeIndex] = completeness;
             m_trueBestMatchPurity[particleTypeIndex] = purity;
             m_trueBestMatchTrackScore[particleTypeIndex] = trackScore;
@@ -1059,6 +1232,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         }
         else
         {
+            m_recoBestMatchRecoRepass[particleTypeIndex] = isRepassOutput;
             m_recoBestMatchCompleteness[particleTypeIndex] = completeness;
             m_recoBestMatchPurity[particleTypeIndex] = purity;
             m_recoBestMatchTrackScore[particleTypeIndex] = trackScore;
@@ -1072,6 +1246,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
 
         if (m_debugMode)
         {
+            std::cout << (isTrueNuSlice ? "trueBestMatchRecoRepass: " : "recoBestMatchRecoRepass: ") << (isRepassOutput? "yes" : "no") << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchCompleteness: " : "recoBestMatchCompleteness: ") << completeness << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchPurity: " : "recoBestMatchPurity: ") << purity << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchTrackScore: " : "recoBestMatchTrackScore: ") << trackScore << std::endl;
@@ -1117,22 +1292,26 @@ void hyperon::SigmaRecoAnalyser::FillContaminationInfo(art::Event const& evt, co
     if (!foundProtonMatch && !foundPionMatch)
         return;
 
-    const MatchingMap &matchingMap(isTrueNuSlice ? m_trueNuSliceMatchingMap : m_recoNuSliceMatchingMap);
-
-    const art::Ptr<recob::PFParticle> &foundPFP(foundProtonMatch ? m_pfpMap_AO.at(matchingMap.at(PROTON_INDEX).front().first) : m_pfpMap_AO.at(matchingMap.at(PION_INDEX).front().first));
-    const int contaminantTrackID(foundProtonMatch ? m_trueParticleID.at(PION_INDEX) : m_trueParticleID.at(PROTON_INDEX));
+    const int foundIndex = foundProtonMatch ? PROTON_INDEX : PION_INDEX;
+    const int soughtIndex = foundProtonMatch ? PION_INDEX : PROTON_INDEX;
+    const bool isRepassReco(isTrueNuSlice ? m_trueBestMatchRecoRepass[foundIndex] : m_recoBestMatchRecoRepass[foundIndex]);
+    const MatchingMap &matchingMap(isTrueNuSlice ? (isRepassReco ? m_trueNuSliceMatchingMap_Repass : m_trueNuSliceMatchingMap) : 
+        (isRepassReco ? m_recoNuSliceMatchingMap_Repass : m_recoNuSliceMatchingMap));
+    const lar_pandora::PFParticleMap &pfpMap(isRepassReco ? m_pfpMap_Repass : m_pfpMap_AO);
+    const art::Ptr<recob::PFParticle> &foundPFP(pfpMap.at(matchingMap.at(foundIndex).front().first));
+    const int contaminantTrackID(m_trueParticleID.at(soughtIndex));
     bool foundContaminationEvidence = false;
     int nContaminantHits = 0;
 
-    std::vector<art::Ptr<recob::Hit>> pfpHits_AO;
-    CollectHitsFromClusters(evt, foundPFP, pfpHits_AO, "pandoraPatRec", "allOutcomes");
+    std::vector<art::Ptr<recob::Hit>> pfpHits;
+    CollectHitsFromClusters(evt, foundPFP, pfpHits, isRepassReco ? "pandoraJam" : "pandoraPatRec", isRepassReco ? "pandoraJam" : "allOutcomes");
 
-    for (const art::Ptr<recob::Hit> pfpHit_AO : pfpHits_AO)
+    for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
     {
-        if (m_trueHitMap.find(pfpHit_AO.key()) == m_trueHitMap.end())
+        if (m_trueHitMap.find(pfpHit.key()) == m_trueHitMap.end())
             continue;
 
-        const int trackID(m_trueHitMap.at(pfpHit_AO.key()));
+        const int trackID(m_trueHitMap.at(pfpHit.key()));
 
         if (trackID == contaminantTrackID)
         {
@@ -1148,16 +1327,9 @@ void hyperon::SigmaRecoAnalyser::FillContaminationInfo(art::Event const& evt, co
             foundProtonMatch ? m_pionMergedTrueSlice = foundContaminationEvidence : m_protonMergedTrueSlice = foundContaminationEvidence;
             foundProtonMatch ? m_pionContaminantHitsTrueSlice = nContaminantHits : m_protonContaminantHitsTrueSlice = nContaminantHits;
 
-            if (foundProtonMatch && (m_matchFoundInTrueOtherSlice[PION_INDEX] == 1))
+            if (m_matchFoundInTrueOtherSlice[soughtIndex] == 1)
             {
-                m_matchFoundInTrueOtherSlice[PION_INDEX] = 0;
-                m_nParticlesFoundInTrueOtherSlice -= 1;
-                m_nParticlesFoundTrueOverall -= 1;
-            }
-
-            if (!foundProtonMatch && (m_matchFoundInTrueOtherSlice[PROTON_INDEX] == 1))
-            {
-                m_matchFoundInTrueOtherSlice[PROTON_INDEX] = 0;
+                m_matchFoundInTrueOtherSlice[soughtIndex] = 0;
                 m_nParticlesFoundInTrueOtherSlice -= 1;
                 m_nParticlesFoundTrueOverall -= 1;
             }
@@ -1167,16 +1339,9 @@ void hyperon::SigmaRecoAnalyser::FillContaminationInfo(art::Event const& evt, co
             foundProtonMatch ? m_pionMergedRecoSlice = foundContaminationEvidence : m_protonMergedRecoSlice = foundContaminationEvidence;
             foundProtonMatch ? m_pionContaminantHitsRecoSlice = nContaminantHits : m_protonContaminantHitsRecoSlice = nContaminantHits;
 
-            if (foundProtonMatch && (m_matchFoundInRecoOtherSlice[PION_INDEX] == 1))
+            if (m_matchFoundInRecoOtherSlice[soughtIndex] == 1)
             {
-                m_matchFoundInRecoOtherSlice[PION_INDEX] = 0;
-                m_nParticlesFoundInRecoOtherSlice -= 1;
-                m_nParticlesFoundRecoOverall -= 1;
-            }
-
-            if (!foundProtonMatch && (m_matchFoundInRecoOtherSlice[PROTON_INDEX] == 1))
-            {
-                m_matchFoundInRecoOtherSlice[PROTON_INDEX] = 0;
+                m_matchFoundInRecoOtherSlice[soughtIndex] = 0;
                 m_nParticlesFoundInRecoOtherSlice -= 1;
                 m_nParticlesFoundRecoOverall -= 1;
             }
@@ -1339,6 +1504,7 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("PionContaminantHitsRecoSlice", &m_pionContaminantHitsRecoSlice);
 
     // Reco stuff - best match stuff  
+    m_tree->Branch("TrueBestMatchRecoRepass", &m_trueBestMatchRecoRepass);
     m_tree->Branch("TrueBestMatchCompleteness", &m_trueBestMatchCompleteness);
     m_tree->Branch("TrueBestMatchPurity", &m_trueBestMatchPurity);
     m_tree->Branch("TrueBestMatchTrackScore", &m_trueBestMatchTrackScore);
@@ -1349,6 +1515,7 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("TrueBestMatchRecoVertexZ", &m_trueBestMatchRecoVertexZ);
     m_tree->Branch("TrueBestMatchNuVertexSep", &m_trueBestMatchNuVertexSep);
 
+    m_tree->Branch("RecoBestMatchRecoRepass", &m_recoBestMatchRecoRepass);
     m_tree->Branch("RecoBestMatchCompleteness", &m_recoBestMatchCompleteness);
     m_tree->Branch("RecoBestMatchPurity", &m_recoBestMatchPurity);
     m_tree->Branch("RecoBestMatchTrackScore", &m_recoBestMatchTrackScore);
@@ -1367,11 +1534,14 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_trueHitMap.clear();
     m_pfpMap.clear();
     m_pfpMap_AO.clear();
+    m_pfpMap_Repass.clear();
     m_sliceMap_AO.clear();
     m_mcParticleMap.clear();
     m_trueNuSliceMatchingMap.clear();
+    m_trueNuSliceMatchingMap_Repass.clear();
     m_trueOtherSliceMatchingMap.clear();
     m_recoNuSliceMatchingMap.clear();
+    m_recoNuSliceMatchingMap_Repass.clear();
     m_recoOtherSliceMatchingMap.clear();
 
     // ID info    
@@ -1449,6 +1619,8 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_protonContaminantHitsRecoSlice = DEFAULT_INT;
 
     // Reco stuff - best match stuff   
+    m_trueBestMatchRecoRepass.clear();
+    m_trueBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
     m_trueBestMatchCompleteness.clear();
     m_trueBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
     m_trueBestMatchPurity.clear();
@@ -1468,6 +1640,8 @@ void hyperon::SigmaRecoAnalyser::Reset()
     m_trueBestMatchNuVertexSep.clear();
     m_trueBestMatchNuVertexSep.resize(4, DEFAULT_DOUBLE);
 
+    m_recoBestMatchRecoRepass.clear();
+    m_recoBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
     m_recoBestMatchCompleteness.clear();
     m_recoBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
     m_recoBestMatchPurity.clear();
