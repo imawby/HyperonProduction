@@ -92,8 +92,6 @@ public:
     void PerformMatching(art::Event const& evt);
     void FindMCParticleMatches(art::Event const& evt, const int particleIndex, const int nuSliceID,
         MatchingMap &nuSliceMatchingMap, MatchingMap &nuSliceMatchingMap_Repass, MatchingMap &otherSliceMatchingMap);
-    void CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
-        std::vector<art::Ptr<recob::Hit>> &hits);
     void OrderMatchingMap(MatchingMap &matchingMap);
     void FillMatchingInfo(art::Event const& evt, const bool isTrueNuSlice);
     void FillContaminationInfo(art::Event const& evt, const bool isTrueNuSlice);
@@ -111,6 +109,8 @@ private:
     std::string m_ClusterLabel;
     std::string m_ClusterInstance;
     //std::string m_SliceLabel;
+    //std::string m_TrackLabel;
+    //std::string m_ShowerLabel;
     std::string m_ModifiedPFParticleLabel;
     std::string m_RepassPFParticleLabel;
 
@@ -189,6 +189,8 @@ private:
 
     // Reco stuff - best match stuff
     std::vector<bool> m_trueBestMatchRecoRepass;
+    std::vector<bool> m_trueBestMatchHasTrack;
+    std::vector<bool> m_trueBestMatchHasShower;
     std::vector<double> m_trueBestMatchCompleteness;
     std::vector<double> m_trueBestMatchPurity;
     std::vector<double> m_trueBestMatchTrackScore;
@@ -200,6 +202,8 @@ private:
     std::vector<double> m_trueBestMatchNuVertexSep;
 
     std::vector<bool> m_recoBestMatchRecoRepass;
+    std::vector<bool> m_recoBestMatchHasTrack;
+    std::vector<bool> m_recoBestMatchHasShower;
     std::vector<double> m_recoBestMatchCompleteness;
     std::vector<double> m_recoBestMatchPurity;
     std::vector<double> m_recoBestMatchTrackScore;
@@ -434,7 +438,7 @@ void hyperon::SigmaRecoAnalyser::FillPandoraMaps(art::Event const& evt)
         art::Handle<std::vector<recob::PFParticle>> pfpHandle_Repass;
         std::vector<art::Ptr<recob::PFParticle>> pfpVector_Repass;
 
-        art::InputTag pfpInputTag_Repass("pandoraJam", "");
+        art::InputTag pfpInputTag_Repass(m_RepassPFParticleLabel, "");
 
         if (!evt.getByLabel(pfpInputTag_Repass, pfpHandle_Repass))
             throw cet::exception("SigmaRecoAnalyser") << "No Repass PFParticle Data Products Found!" << std::endl;
@@ -796,7 +800,7 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 
     if (m_modifiedRecoInput)
     {
-        if (!evt.getByLabel("pandoraJam", pfpHandle_Modified))
+        if (!evt.getByLabel(m_ModifiedPFParticleLabel, pfpHandle_Modified))
             throw cet::exception("SigmaRecoAnalyser") << "No Modified PFParticle Data Products Found!" << std::endl;
     }
 
@@ -806,7 +810,7 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 
     if (m_modifiedRecoInput)
     {
-        art::InputTag pfpInputTag_Repass("pandoraJam", "");
+        art::InputTag pfpInputTag_Repass(m_RepassPFParticleLabel, "");
 
         if (!evt.getByLabel(pfpInputTag_Repass, pfpHandle_Repass))
             throw cet::exception("SigmaRecoAnalyser") << "No Repass PFParticle Data Products Found!" << std::endl;
@@ -888,7 +892,7 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
         std::map<int, int> trackIDToHitMap;
 
         std::vector<art::Ptr<recob::Hit>> pfpHits;
-        CollectHitsFromClusters(evt, pfp_Repass, pfpHits, "pandoraJam", "");
+        CollectHitsFromClusters(evt, pfp_Repass, pfpHits, m_RepassPFParticleLabel, "");
 
         for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
         {
@@ -986,37 +990,6 @@ void hyperon::SigmaRecoAnalyser::FindMCParticleMatches(art::Event const& evt, co
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 void hyperon::SigmaRecoAnalyser::CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
-   std::vector<art::Ptr<recob::Hit>> &hits)
-{
-   art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
-
-    art::InputTag pfpInputTag(m_PFParticleLabel, m_PFParticleInstance);
-
-   if (!evt.getByLabel(pfpInputTag, pfparticleHandle))
-       throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
-
-   art::Handle<std::vector<recob::Cluster>> clusterHandle;
-
-    art::InputTag clusterInputTag(m_ClusterLabel, m_ClusterInstance);
-
-   if (!evt.getByLabel(clusterInputTag, clusterHandle)) 
-       throw cet::exception("SigmaRecoAnalyser") << "No Cluster Data Products Found!" << std::endl;
-
-   art::FindManyP<recob::Cluster> pfparticleClustersAssoc = art::FindManyP<recob::Cluster>(pfparticleHandle, evt, pfpInputTag);
-   art::FindManyP<recob::Hit> clusterHitAssoc = art::FindManyP<recob::Hit>(clusterHandle, evt, clusterInputTag);
-
-   std::vector<art::Ptr<recob::Cluster>> clusters = pfparticleClustersAssoc.at(pfparticle.key());
-
-   for (const art::Ptr<recob::Cluster> cluster : clusters)
-   {
-       std::vector<art::Ptr<recob::Hit>> clusterHits = clusterHitAssoc.at(cluster.key());
-       hits.insert(hits.end(), clusterHits.begin(), clusterHits.end());
-   }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////
-
-void hyperon::SigmaRecoAnalyser::CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
    std::vector<art::Ptr<recob::Hit>> &hits, const std::string &moduleName, const std::string &instanceName)
 {
    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle;
@@ -1079,9 +1052,11 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
     art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn_AO = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle_AO, evt, pfpInputTag_AO);
     art::FindManyP<recob::Vertex> vertexAssoc_AO = art::FindManyP<recob::Vertex>(pfparticleHandle_AO, evt, pfpInputTag_AO);
     art::FindManyP<recob::Slice> sliceAssoc_AO = art::FindManyP<recob::Slice>(pfparticleHandle_AO, evt, pfpInputTag_AO);
+    art::FindManyP<recob::Shower> showerAssoc_AO = art::FindManyP<recob::Shower>(pfparticleHandle_AO, evt, "pandoraAllOutcomesShowerRedo");
+    art::FindManyP<recob::Track> trackAssoc_AO = art::FindManyP<recob::Track>(pfparticleHandle_AO, evt, "pandoraAllOutcomesTrackRedo");
 
     // Repass output
-    art::InputTag pfpInputTag_Repass("pandoraJam", "");
+    art::InputTag pfpInputTag_Repass(m_RepassPFParticleLabel, "");
     art::Handle<std::vector<recob::PFParticle>> pfparticleHandle_Repass;
 
     if (m_modifiedRecoInput)
@@ -1145,10 +1120,33 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         //////////////////////////////////////
         // Completeness & Purity
         std::vector<art::Ptr<recob::Hit>> pfpHits;
-        CollectHitsFromClusters(evt, pfp, pfpHits, isRepassOutput ? "pandoraJam" : "pandoraPatRec", isRepassOutput ? "" : "allOutcomes");
+        CollectHitsFromClusters(evt, pfp, pfpHits, isRepassOutput ? m_RepassPFParticleLabel : "pandoraPatRec", isRepassOutput ? "" : "allOutcomes");
 
         const double completeness(static_cast<double>(matchPair.second) / static_cast<double>(m_nTrueHits[particleTypeIndex]));
         const double purity(static_cast<double>(matchPair.second) / static_cast<double>(pfpHits.size()));
+
+        bool hasTrack(DEFAULT_BOOL), hasShower(DEFAULT_BOOL);
+
+        // Found associated track/shower?
+        if (isRepassOutput)
+        {
+            art::FindManyP<recob::Track> trackAssoc_Repass = art::FindManyP<recob::Track>(pfparticleHandle_Repass, evt, "pandoraReprocessSlicesLambdaCheatTrack");
+            art::FindManyP<recob::Shower> showerAssoc_Repass = art::FindManyP<recob::Shower>(pfparticleHandle_Repass, evt, "pandoraReprocessSlicesLambdaCheatShower");
+
+            std::vector<art::Ptr<recob::Track>> tracks = trackAssoc_Repass.at(pfp.key());
+            std::vector<art::Ptr<recob::Shower>> showers = showerAssoc_Repass.at(pfp.key());
+
+            hasTrack = !(tracks.empty());
+            hasShower = !(showers.empty());
+        }
+        else
+        {
+            std::vector<art::Ptr<recob::Track>> tracks = trackAssoc_AO.at(pfp.key());
+            std::vector<art::Ptr<recob::Shower>> showers = showerAssoc_AO.at(pfp.key());
+
+            hasTrack = !(tracks.empty());
+            hasShower = !(showers.empty());
+        }
 
         // Track score
         double trackScore(DEFAULT_DOUBLE);
@@ -1220,6 +1218,8 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         if (isTrueNuSlice)
         {
             m_trueBestMatchRecoRepass[particleTypeIndex] = isRepassOutput;
+            m_trueBestMatchHasTrack[particleTypeIndex] = hasTrack;
+            m_trueBestMatchHasShower[particleTypeIndex] = hasShower;
             m_trueBestMatchCompleteness[particleTypeIndex] = completeness;
             m_trueBestMatchPurity[particleTypeIndex] = purity;
             m_trueBestMatchTrackScore[particleTypeIndex] = trackScore;
@@ -1233,6 +1233,8 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         else
         {
             m_recoBestMatchRecoRepass[particleTypeIndex] = isRepassOutput;
+            m_recoBestMatchHasTrack[particleTypeIndex] = hasTrack;
+            m_recoBestMatchHasShower[particleTypeIndex] = hasShower;
             m_recoBestMatchCompleteness[particleTypeIndex] = completeness;
             m_recoBestMatchPurity[particleTypeIndex] = purity;
             m_recoBestMatchTrackScore[particleTypeIndex] = trackScore;
@@ -1247,6 +1249,8 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
         if (m_debugMode)
         {
             std::cout << (isTrueNuSlice ? "trueBestMatchRecoRepass: " : "recoBestMatchRecoRepass: ") << (isRepassOutput? "yes" : "no") << std::endl;
+            std::cout << (isTrueNuSlice ? "trueBestMatchHasTrack: " : "recoBestMatchHasTrack: ") << (hasTrack ? "yes" : "no") << std::endl;
+            std::cout << (isTrueNuSlice ? "trueBestMatchHasShower: " : "recoBestMatchHasShower: ") << (hasShower ? "yes" : "no") << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchCompleteness: " : "recoBestMatchCompleteness: ") << completeness << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchPurity: " : "recoBestMatchPurity: ") << purity << std::endl;
             std::cout << (isTrueNuSlice ? "trueBestMatchTrackScore: " : "recoBestMatchTrackScore: ") << trackScore << std::endl;
@@ -1304,7 +1308,7 @@ void hyperon::SigmaRecoAnalyser::FillContaminationInfo(art::Event const& evt, co
     int nContaminantHits = 0;
 
     std::vector<art::Ptr<recob::Hit>> pfpHits;
-    CollectHitsFromClusters(evt, foundPFP, pfpHits, isRepassReco ? "pandoraJam" : "pandoraPatRec", isRepassReco ? "pandoraJam" : "allOutcomes");
+    CollectHitsFromClusters(evt, foundPFP, pfpHits, isRepassReco ? m_RepassPFParticleLabel : "pandoraPatRec", isRepassReco ? "" : "allOutcomes");
 
     for (const art::Ptr<recob::Hit> pfpHit : pfpHits)
     {
@@ -1505,6 +1509,8 @@ void hyperon::SigmaRecoAnalyser::beginJob()
 
     // Reco stuff - best match stuff  
     m_tree->Branch("TrueBestMatchRecoRepass", &m_trueBestMatchRecoRepass);
+    m_tree->Branch("TrueBestMatchHasTrack", &m_trueBestMatchHasTrack);
+    m_tree->Branch("TrueBestMatchHasShower", &m_trueBestMatchHasShower);
     m_tree->Branch("TrueBestMatchCompleteness", &m_trueBestMatchCompleteness);
     m_tree->Branch("TrueBestMatchPurity", &m_trueBestMatchPurity);
     m_tree->Branch("TrueBestMatchTrackScore", &m_trueBestMatchTrackScore);
@@ -1516,6 +1522,8 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("TrueBestMatchNuVertexSep", &m_trueBestMatchNuVertexSep);
 
     m_tree->Branch("RecoBestMatchRecoRepass", &m_recoBestMatchRecoRepass);
+    m_tree->Branch("RecoBestMatchHasTrack", &m_recoBestMatchHasTrack);
+    m_tree->Branch("RecoBestMatchHasShower", &m_recoBestMatchHasShower);
     m_tree->Branch("RecoBestMatchCompleteness", &m_recoBestMatchCompleteness);
     m_tree->Branch("RecoBestMatchPurity", &m_recoBestMatchPurity);
     m_tree->Branch("RecoBestMatchTrackScore", &m_recoBestMatchTrackScore);
@@ -1621,6 +1629,10 @@ void hyperon::SigmaRecoAnalyser::Reset()
     // Reco stuff - best match stuff   
     m_trueBestMatchRecoRepass.clear();
     m_trueBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
+    m_trueBestMatchHasTrack.clear();
+    m_trueBestMatchHasTrack.resize(4, DEFAULT_BOOL);
+    m_trueBestMatchHasShower.clear();
+    m_trueBestMatchHasShower.resize(4, DEFAULT_BOOL);
     m_trueBestMatchCompleteness.clear();
     m_trueBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
     m_trueBestMatchPurity.clear();
@@ -1642,6 +1654,10 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     m_recoBestMatchRecoRepass.clear();
     m_recoBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
+    m_recoBestMatchHasTrack.clear();
+    m_recoBestMatchHasTrack.resize(4, DEFAULT_BOOL);
+    m_recoBestMatchHasShower.clear();
+    m_recoBestMatchHasShower.resize(4, DEFAULT_BOOL);
     m_recoBestMatchCompleteness.clear();
     m_recoBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
     m_recoBestMatchPurity.clear();

@@ -93,11 +93,11 @@ class hyperon::LambdaVertexProducer : public art::EDProducer {
 hyperon::LambdaVertexProducer::LambdaVertexProducer(fhicl::ParameterSet const& p)
    : EDProducer{p},
    f_MCParticleLabel(p.get<std::string>("MCParticleLabel", "largeant")),
-   f_PFParticleLabel(p.get<std::string>("PFParticleLabel", "pandoraPatRec")),
+   f_PFParticleLabel(p.get<std::string>("PFParticleLabel")),
    f_HitLabel(p.get<std::string>("HitLabel", "gaushit")),
-   f_ClusterLabel(p.get<std::string>("ClusterLabel", "pandoraPatRec")),
+   f_ClusterLabel(p.get<std::string>("ClusterLabel")),
    f_TruthMatchingLabel(p.get<std::string>("TruthMatchingLabel", "gaushitTruthMatch")),
-    f_PFPInstanceName(p.get<std::string>("PFPInstanceName", "")),
+   f_PFPInstanceName(p.get<std::string>("PFPInstanceName", "")),
    f_Generator(p.get<fhicl::ParameterSet>("Generator")),
    f_G4(p.get<fhicl::ParameterSet>("Geant4"))
 {
@@ -194,6 +194,12 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
        return;
    }
 
+   std::cout << "muonTrackID: " << muonTrackID << std::endl;
+   std::cout << "protonTrackID: " << protonTrackID << std::endl;
+   std::cout << "pionTrackID: " << pionTrackID << std::endl;
+   std::cout << "gammaTrackID: " << gammaTrackID << std::endl;
+
+
    std::map<int, int> trueHitMap;
    FillMCParticleHitInfo(e, mcParticleMap, trueHitMap);
 
@@ -250,6 +256,9 @@ void hyperon::LambdaVertexProducer::produce(art::Event& e)
        int matchedTrackID(-1);
        if (!GetMatchedTrackID(e, pfparticle, trueHitMap, matchedTrackID))
            continue;
+
+       std::cout << "matchedTrackID: " << matchedTrackID << std::endl;
+       std::cout << "matched PDG: " << mcParticleMap.at(matchedTrackID)->PdgCode() << std::endl;
 
        if (matchedTrackID == protonTrackID)
            protonPFParticles.push_back(pfparticle);
@@ -538,7 +547,15 @@ void hyperon::LambdaVertexProducer::CollectChildren(art::Event& e, const art::Pt
     lar_pandora::PFParticleMap &pfparticleMap, std::vector<art::Ptr<recob::PFParticle>> &collectedParticles, 
     std::vector<art::Ptr<recob::Hit>> &collectedHits)
 {
-    if (std::find(collectedParticles.begin(), collectedParticles.end(), pfparticle) == collectedParticles.end())
+    bool found = false;
+
+    for (const art::Ptr<recob::PFParticle> &collectedPFP : collectedParticles)
+    {
+        if (collectedPFP->Self() == pfparticle->Self())
+            found = true;
+    }
+
+    if (!found)
     {
         collectedParticles.push_back(pfparticle);
 
@@ -584,6 +601,10 @@ void hyperon::LambdaVertexProducer::CollectHits(art::Event& e, const art::Ptr<re
    for (const art::Ptr<recob::Cluster> cluster : clusters)
    {
        std::vector<art::Ptr<recob::Hit>> clusterHits = clusterHitAssoc.at(cluster.key());
+
+
+       std::cout << "clusterHits.size(): " << clusterHits.size() << std::endl;
+
        hits.insert(hits.end(), clusterHits.begin(), clusterHits.end());
    }
 }

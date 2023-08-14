@@ -56,5 +56,11 @@ physics.producers.pandoraAllOutcomesShowerRedo.PFParticleLabel: "pandoraPatRec"
 physics.producers.pandoraAllOutcomesTrackRedo.PFParticleInstance:  "allOutcomes"
 physics.producers.pandoraAllOutcomesShowerRedo.PFParticleInstance: "allOutcomes"
 
-physics.analyzers.sigmaRecoAnalyser.ModifiedRecoInput:         false
-physics.analyzers.sigmaRecoAnalyser.DebugMode:                 true
+physics.analyzers.sigmaRecoAnalyser.PFParticleLabel:          "pandora"        # this isn't an error
+physics.analyzers.sigmaRecoAnalyser.PFParticleInstance:       ""               # this isn't an error
+physics.analyzers.sigmaRecoAnalyser.ClusterLabel:             "pandora"        # this isn't an error
+physics.analyzers.sigmaRecoAnalyser.ClusterInstance:          "allOutcomes"
+physics.analyzers.sigmaRecoAnalyser.ModifiedPFParticleLabel:  "LambdaVertexProducer"
+physics.analyzers.sigmaRecoAnalyser.RepassPFParticleLabel:    "pandoraReprocessSlicesLambdaCheat"
+physics.analyzers.sigmaRecoAnalyser.ModifiedRecoInput:         true
+physics.analyzers.sigmaRecoAnalyser.DebugMode:                 true 
