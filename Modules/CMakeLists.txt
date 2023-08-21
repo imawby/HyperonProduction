@@ -6,6 +6,7 @@ art_make(
 
 		DICT_LIBRARIES
                 ${ROOT_BASIC_LIB_LIST} #required to make Reco/Sim Particle dictionaries
+                ${ROOT_GENVECTOR}
 
 		MODULE_LIBRARIES 
         larcorealg_Geometry

@@ -21,8 +21,10 @@ public:
 RecoParticle(){}
 ~RecoParticle(){}
 
-int Index;
+int Self;
 bool InNuSlice = false;
+int Key = -1;
+int TrackVectorIndex = -1;
 
 // General reco info
 int PDG; // Pandora PDG code (11 or 13)
@@ -59,6 +61,7 @@ double TrackTrueEndKE;
 double TrackTrueLength;
 int TrackTrueOrigin; // 1 - primary , 2 - hyperon decay, 3 - other, 4 - kaon decay, 5 - Sigma0 decay
 double TrackTruthPurity;
+double TrackTruthCompleteness;
 int NMatchedHits;
 
 inline void SetVertex(TVector3 V);

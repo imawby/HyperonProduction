@@ -294,7 +294,8 @@ std::vector<int> SubModuleG4Truth::GetChildIDs(const art::Ptr<simb::MCParticle> 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int SubModuleG4Truth::GetOrigin(int trackid){
+int SubModuleG4Truth::GetOrigin(int trackid) const
+{
 
    if(std::find(Primary_IDs.begin(),Primary_IDs.end(),trackid) != Primary_IDs.end()) return 1;
    else if(std::find(Daughter_IDs.begin(),Daughter_IDs.end(),trackid) != Daughter_IDs.end()) return 2;

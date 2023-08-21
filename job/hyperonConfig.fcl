@@ -28,24 +28,35 @@ DecayPionThresh: 0.0
 
 # Reco submodule config
 Reco: {
-GeneratorModuleLabel: "generator"
-G4ModuleLabel: "largeant"
-PFParticleModuleLabel: "pandora"
-TrackModuleLabel: "pandora"
-VertexModuleLabel: "pandora"
-ShowerModuleLabel: "pandora"
-MetadataModuleLabel: "pandora" 
-PIDModuleLabel: "pandorapid"
-CaloModuleLabel: "pandoracali"
-HitModuleLabel: "gaushit"
-TrackHitAssnLabel: "pandora" 
-ShowerHitAssnLabel: "pandora"
-HitTruthAssnLabel: "gaushitTruthMatch"
+GeneratorModuleLabel:            "generator"
+G4ModuleLabel:                   "largeant"
+PandoraSingleOutcomeModuleLabel: "pandora"
+PandoraModuleLabel:              "pandoraPatRec"
+PandoraInstanceLabel:            "allOutcomes"
+TrackModuleLabel:                "pandoraAllOutcomesTrackRedo"
+ShowerModuleLabel:               "pandoraAllOutcomesShowerRedo"
+PIDModuleLabel:                  "pandoraPIDAllOutcomes"
+CaloModuleLabel:                 "pandoraCaliAllOutcomes"
+HitModuleLabel:                  "gaushit"
+HitTruthAssnLabel:               "gaushitTruthMatch"
 }
 
 # Connectedness test config
 WireLabel: "butcher"
 DrawConnectedness: false
+
+# Validation submodule config
+Validation: {
+MCParticleModuleLabel:   "largeant"
+HitModuleLabel:          "gaushit"
+PandoraModuleLabel:      "pandoraPatRec"
+PandoraInstanceLabel:    "allOutcomes"
+BacktrackModuleLabel:    "gaushitTruthMatch"
+}
+
+
+
+
 
 #WeightCalculators: ["eventweight::EventWeightSept24",
 #                    "eventweight::EventWeightSept24ExtraGENIE1",

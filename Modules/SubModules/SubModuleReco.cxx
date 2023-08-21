@@ -1,4 +1,4 @@
-#ifndef RecoVariables_cxx_
+#ifndef _RecoVariables_cxx_
 #define _RecoVariables_cxx_
 
 #include "SubModuleReco.h"
@@ -7,112 +7,106 @@ using namespace hyperon;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//SubModuleReco::SubModuleReco(){}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-SubModuleReco::SubModuleReco(art::Event const& e,bool isdata,fhicl::ParameterSet pset) :
-SubModuleReco(e,isdata,
-                  pset.get<std::string>("PFParticleModuleLabel"),
-                  pset.get<std::string>("TrackModuleLabel"),
-                  pset.get<std::string>("ShowerModuleLabel"),
-                  pset.get<std::string>("VertexModuleLabel"),
-                  pset.get<std::string>("PIDModuleLabel"),
-                  pset.get<std::string>("CaloModuleLabel"),
-                  pset.get<std::string>("HitModuleLabel"),
-                  pset.get<std::string>("HitTruthAssnLabel"),
-                  pset.get<std::string>("TrackHitAssnLabel"),
-                  pset.get<std::string>("MetadataModuleLabel"),
-                  pset.get<std::string>("GeneratorModuleLabel"),
-                  pset.get<std::string>("G4ModuleLabel"),
-                  pset.get<std::string>("PFParticleModuleLabelReprocessed", ""),
-                  pset.get<std::string>("TrackModuleLabelReprocessed", ""),
-                  pset.get<std::string>("ShowerModuleLabelReprocessed", ""),
-                  pset.get<std::string>("VertexModuleLabelReprocessed", ""),
-                  pset.get<std::string>("PIDModuleLabelReprocessed", ""),
-                  pset.get<std::string>("CaloModuleLabelReprocessed", ""),
-                  pset.get<std::string>("HitModuleLabelReprocessed", ""),
-                  pset.get<std::string>("TrackHitAssnLabelReprocessed", ""),
-                  pset.get<std::string>("MetadataModuleLabelReprocessed", ""),
-                  pset.get<std::string>("ModifiedPFPListLabel", ""),
-                  pset.get<bool>("DoGetPIDs",true),
-                  pset.get<bool>("IncludeCosmics",false),
-                  pset.get<bool>("ModifiedReco", false))
+SubModuleReco::SubModuleReco(art::Event const& e, bool isdata, fhicl::ParameterSet pset) :
+              m_isData(isdata),
+              m_GeneratorModuleLabel(pset.get<std::string>("GeneratorModuleLabel")),
+              m_G4ModuleLabel(pset.get<std::string>("G4ModuleLabel")),
+              m_PandoraSingleOutcomeModuleLabel(pset.get<std::string>("PandoraSingleOutcomeModuleLabel")),
+              m_PandoraModuleLabel(pset.get<std::string>("PandoraModuleLabel")),
+              m_PandoraInstanceLabel(pset.get<std::string>("PandoraInstanceLabel", "")),
+              m_TrackModuleLabel(pset.get<std::string>("TrackModuleLabel")),
+              m_ShowerModuleLabel(pset.get<std::string>("ShowerModuleLabel")),
+              m_PIDModuleLabel(pset.get<std::string>("PIDModuleLabel")),
+              m_CaloModuleLabel(pset.get<std::string>("CaloModuleLabel")),
+              m_HitModuleLabel(pset.get<std::string>("HitModuleLabel")),
+              m_modifiedReco(pset.get<bool>("ModifiedReco", false)),
+              m_PandoraModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("PandoraModuleLabelReprocessed") : ""),
+              m_PandoraInstanceLabelReprocessed(pset.get<std::string>("PandoraInstanceLabelReprocessed", "")),
+              m_TrackModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("TrackModuleLabelReprocessed") : ""),
+              m_ShowerModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("ShowerModuleLabelReprocessed") : ""),
+              m_PIDModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("PIDModuleLabelReprocessed") : ""),
+              m_CaloModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("CaloModuleLabelReprocessed") : ""),
+              m_HitModuleLabelReprocessed(m_modifiedReco ? pset.get<std::string>("HitModuleLabelReprocessed") : ""),
+              m_ModifiedPFPListLabel(m_modifiedReco ? pset.get<std::string>("ModifiedPFPListLabel") : ""),
+              m_doGetPIDs(pset.get<bool>("DoGetPIDs", true)),
+              m_resRangeCutoff(pset.get<double>("ResRangeCutoff", 5.0)),
+              m_reducedFileSize(pset.get<bool>("ReducedFileSize", false))
 {
+   std::cout << "m_PandoraModuleLabel: " << m_PandoraModuleLabel << std::endl;
 
-}
+   if (!e.getByLabel(m_PandoraSingleOutcomeModuleLabel, Handle_PFParticle_SingleOutcome))
+       throw cet::exception("SubModuleReco") << "No Single Outcome PFParticle Data Products Found!" << std::endl;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
+   std::cout << "m_PandoraModuleLabel" << m_PandoraModuleLabel << std::endl;
+   std::cout << "m_PandoraInstanceLabel" << m_PandoraInstanceLabel << std::endl;
 
-SubModuleReco::SubModuleReco(art::Event const& e,bool isdata,string pfparticlelabel,string tracklabel,
-                                     string showerlabel,string vertexlabel,string pidlabel,string calolabel,string hitlabel,
-                                     string hittruthassnlabel,string trackhitassnlabel,string metadatalabel,string genlabel,
-                                     string g4label, string pfparticlelabelReprocessed, string tracklabelReprocessed,
-                                     string showerlabelReprocessed, string vertexlabelReprocessed, string pidlabelReprocessed, 
-                                     string calolabelReprocessed, string hitlabelReprocessed,
-                                     string trackhitassnlabelReprocessed, string metadatalabelReprocessed, 
-                                     string modifiedPFPListLabel, bool dogetpids, bool includecosmics, bool modifiedReco) :
-PIDCalc(),
-DoGetPIDs(dogetpids),
-IncludeCosmics(includecosmics),
-m_modifiedReco(modifiedReco)
-{
+   const art::InputTag pandoraTag(m_PandoraModuleLabel, m_PandoraInstanceLabel);
 
-   IsData = isdata;
-
-   if(!e.getByLabel(pfparticlelabel,Handle_PFParticle)) 
+   if(!e.getByLabel(pandoraTag, Handle_PFParticle)) 
       throw cet::exception("SubModuleReco") << "No PFParticle Data Products Found!" << std::endl;
 
-   if(!e.getByLabel(tracklabel,Handle_Track)) 
+   if(!e.getByLabel(pandoraTag, Handle_Slice)) 
+      throw cet::exception("SubModuleReco") << "No Slice Data Products Found!" << std::endl;
+
+   if(!e.getByLabel(m_TrackModuleLabel, Handle_Track)) 
       throw cet::exception("SubModuleReco") << "No Track Data Products Found!" << std::endl;
 
-   if(!e.getByLabel(showerlabel,Handle_Shower)) 
+   if(!e.getByLabel(m_ShowerModuleLabel, Handle_Shower)) 
       throw cet::exception("SubModuleReco") << "No Shower Data Products Found!" << std::endl;
 
-   if(!e.getByLabel(hitlabel,Handle_Hit)) 
+   if(!e.getByLabel(m_HitModuleLabel, Handle_Hit)) 
       throw cet::exception("SubModuleReco") << "No Hit Data Products Found!" << std::endl;
 
-   art::fill_ptr_vector(Vect_PFParticle,Handle_PFParticle);
-   art::fill_ptr_vector(Vect_Track,Handle_Track);
-   art::fill_ptr_vector(Vect_Shower,Handle_Shower);
-   art::fill_ptr_vector(Vect_Hit,Handle_Hit);
+   art::fill_ptr_vector(Vect_PFParticle_SingleOutcome, Handle_PFParticle_SingleOutcome);
+   art::fill_ptr_vector(Vect_PFParticle, Handle_PFParticle);
+   art::fill_ptr_vector(Vect_Slice, Handle_Slice);
+   art::fill_ptr_vector(Vect_Track, Handle_Track);
+   art::fill_ptr_vector(Vect_Shower, Handle_Shower);
+   art::fill_ptr_vector(Vect_Hit, Handle_Hit);
 
-   Assoc_PFParticleVertex = new art::FindManyP<recob::Vertex>(Vect_PFParticle,e,vertexlabel);    
-   Assoc_PFParticleTrack = new art::FindManyP<recob::Track>(Vect_PFParticle,e,tracklabel);    
-   Assoc_PFParticleShower = new art::FindManyP<recob::Shower>(Vect_PFParticle,e,showerlabel);    
-   Assoc_PFParticleMetadata = new art::FindManyP<larpandoraobj::PFParticleMetadata>(Vect_PFParticle,e,metadatalabel);   
-   Assoc_TrackHit = new  art::FindManyP<recob::Hit>(Vect_Track,e,trackhitassnlabel);
-   ParticlesPerHit = new art::FindMany<simb::MCParticle,anab::BackTrackerHitMatchingData>(Handle_Hit,e,hittruthassnlabel);
+   Assoc_PFParticleSlice_SingleOutcome = new art::FindManyP<recob::Slice>(Vect_PFParticle_SingleOutcome, e, m_PandoraSingleOutcomeModuleLabel);
 
-   if(DoGetPIDs){
-      Assoc_TrackCalo = new art::FindManyP<anab::Calorimetry>(Vect_Track,e,calolabel);
-      Assoc_TrackPID = new art::FindManyP<anab::ParticleID>(Vect_Track,e,pidlabel);
+   Assoc_SlicePFParticle = new art::FindManyP<recob::PFParticle>(Vect_Slice, e, pandoraTag);
+   Assoc_PFParticleVertex = new art::FindManyP<recob::Vertex>(Vect_PFParticle, e, pandoraTag);
+   Assoc_PFParticleTrack = new art::FindManyP<recob::Track>(Vect_PFParticle, e, m_TrackModuleLabel);    
+   Assoc_PFParticleShower = new art::FindManyP<recob::Shower>(Vect_PFParticle, e, m_ShowerModuleLabel);    
+   Assoc_PFParticleMetadata = new art::FindManyP<larpandoraobj::PFParticleMetadata>(Vect_PFParticle, e, pandoraTag);   
+   Assoc_TrackHit = new  art::FindManyP<recob::Hit>(Vect_Track, e, m_TrackModuleLabel);
+
+   if(m_doGetPIDs)
+   {
+      Assoc_TrackCalo = new art::FindManyP<anab::Calorimetry>(Vect_Track, e, m_CaloModuleLabel);
+      Assoc_TrackPID = new art::FindManyP<anab::ParticleID>(Vect_Track, e, m_PIDModuleLabel);
    }
-
 
    if (m_modifiedReco)
    {
-       e.getByLabel(modifiedPFPListLabel, Handle_PFParticle_Modified);
-       e.getByLabel(pfparticlelabelReprocessed, Handle_PFParticle_Reprocessed);
-       e.getByLabel(tracklabelReprocessed, Handle_Track_Reprocessed);
-       e.getByLabel(showerlabelReprocessed, Handle_Shower_Reprocessed);
-       e.getByLabel(hitlabelReprocessed, Handle_Hit_Reprocessed);
+       const art::InputTag pandoraTagReprocessed(m_PandoraModuleLabelReprocessed, m_PandoraInstanceLabelReprocessed);
+
+       e.getByLabel(m_ModifiedPFPListLabel, Handle_PFParticle_Modified);
+       e.getByLabel(pandoraTagReprocessed, Handle_PFParticle_Reprocessed);
+       e.getByLabel(pandoraTagReprocessed, Handle_Slice_Reprocessed);
+       e.getByLabel(m_TrackModuleLabelReprocessed, Handle_Track_Reprocessed);
+       e.getByLabel(m_ShowerModuleLabelReprocessed, Handle_Shower_Reprocessed);
+       e.getByLabel(m_HitModuleLabelReprocessed, Handle_Hit_Reprocessed);
 
        art::fill_ptr_vector(Vect_PFParticle_Reprocessed, Handle_PFParticle_Reprocessed);
+       art::fill_ptr_vector(Vect_Slice_Reprocessed, Handle_Slice_Reprocessed);
        art::fill_ptr_vector(Vect_Track_Reprocessed, Handle_Track_Reprocessed);
        art::fill_ptr_vector(Vect_Shower_Reprocessed, Handle_Shower_Reprocessed);
        art::fill_ptr_vector(Vect_Hit_Reprocessed, Handle_Hit_Reprocessed);
 
-       Assoc_PFParticleVertex_Reprocessed = new art::FindManyP<recob::Vertex>(Vect_PFParticle_Reprocessed, e, vertexlabelReprocessed);
-       Assoc_PFParticleTrack_Reprocessed = new art::FindManyP<recob::Track>(Vect_PFParticle_Reprocessed, e, tracklabelReprocessed);
-       Assoc_PFParticleShower_Reprocessed = new art::FindManyP<recob::Shower>(Vect_PFParticle_Reprocessed, e, showerlabelReprocessed);   
-       Assoc_PFParticleMetadata_Reprocessed = new art::FindManyP<larpandoraobj::PFParticleMetadata>(Vect_PFParticle_Reprocessed, e, metadatalabelReprocessed);
-       Assoc_TrackHit_Reprocessed = new  art::FindManyP<recob::Hit>(Vect_Track_Reprocessed, e, trackhitassnlabelReprocessed);
+       Assoc_SlicePFParticle_Reprocessed = new art::FindManyP<recob::PFParticle>(Vect_Slice_Reprocessed, e, pandoraTagReprocessed);
+       Assoc_PFParticleVertex_Reprocessed = new art::FindManyP<recob::Vertex>(Vect_PFParticle_Reprocessed, e, pandoraTagReprocessed);
+       Assoc_PFParticleTrack_Reprocessed = new art::FindManyP<recob::Track>(Vect_PFParticle_Reprocessed, e, m_TrackModuleLabelReprocessed);
+       Assoc_PFParticleShower_Reprocessed = new art::FindManyP<recob::Shower>(Vect_PFParticle_Reprocessed, e, m_ShowerModuleLabelReprocessed);   
+       Assoc_PFParticleMetadata_Reprocessed = new art::FindManyP<larpandoraobj::PFParticleMetadata>(Vect_PFParticle_Reprocessed, e, pandoraTagReprocessed);
+       Assoc_TrackHit_Reprocessed = new  art::FindManyP<recob::Hit>(Vect_Track_Reprocessed, e, m_TrackModuleLabelReprocessed);
     
-       if(DoGetPIDs)
+       if(m_doGetPIDs)
        {
-           Assoc_TrackCalo_Reprocessed = new art::FindManyP<anab::Calorimetry>(Vect_Track_Reprocessed, e, calolabelReprocessed);
-           Assoc_TrackPID_Reprocessed = new art::FindManyP<anab::ParticleID>(Vect_Track_Reprocessed, e, pidlabelReprocessed);
+           Assoc_TrackCalo_Reprocessed = new art::FindManyP<anab::Calorimetry>(Vect_Track_Reprocessed, e, m_CaloModuleLabelReprocessed);
+           Assoc_TrackPID_Reprocessed = new art::FindManyP<anab::ParticleID>(Vect_Track_Reprocessed, e, m_PIDModuleLabelReprocessed);
        }
    }
 
@@ -139,44 +133,144 @@ m_modifiedReco(modifiedReco)
    llr_pid_calculator_kaon.set_dedx_binning(2, kaonproton_parameters.dedx_edges_pl_2);
    llr_pid_calculator_kaon.set_par_binning(2, kaonproton_parameters.parameters_edges_pl_2);
    llr_pid_calculator_kaon.set_lookup_tables(2, kaonproton_parameters.dedx_pdf_pl_2);
+}
 
-   if(!IsData){
-      G4T = new SubModuleG4Truth(e,genlabel,g4label);
-      G4T->GetParticleLists();
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void SubModuleReco::PrepareInfo()
+{
+   // Get chosen nu slice ID
+   theData.ChoosenNuSliceID = GetChosenNuSliceID();
+
+   // Go through slices... 
+   for (const art::Ptr<recob::Slice> &slice : Vect_Slice)
+   {
+       TVector3 nuVertex3D(-999.0, -999.0, -999.0);
+       if (!GetPrimaryVertex(slice, nuVertex3D))
+           continue;
+
+       std::vector<RecoParticle> trackPrimaries, showerPrimaries;
+       std::vector<TVector3> trackStarts;
+
+       this->FillPrimaryInfo(slice, false, nuVertex3D, trackPrimaries, showerPrimaries, trackStarts);
+
+       // Look at reprocessed reco
+       if (m_modifiedReco)
+           this->FillPrimaryInfo(slice, true, nuVertex3D, trackPrimaries, showerPrimaries, trackStarts);
+
+       int nTrackPrimaries = trackPrimaries.size();
+       int nShowerPrimaries = showerPrimaries.size();
+
+       if ((nTrackPrimaries == 0) && (nShowerPrimaries == 0))
+           continue;
+
+       std::cout << "nTrackPrimaries: " << nTrackPrimaries << std::endl;
+       std::cout << "nShowerPrimaries: " << nShowerPrimaries << std::endl;
+
+       if (m_reducedFileSize)
+       {
+           if ((nTrackPrimaries != 3) && (nShowerPrimaries != 1))
+           {
+               /*
+               nTrackPrimaries = 0;
+               nShowerPrimaries = 0;
+               trackPrimaries.clear();
+               showerPrimaries.clear();
+               trackStarts.clear();
+               */
+
+               continue;
+           }
+       }
+
+       std::cout << "WE PASS TRACK/SHOWER CUTS!" << std::endl;
+
+       theData.SliceID.push_back(slice->ID());
+       theData.RecoPrimaryVertex.push_back(nuVertex3D);
+       theData.TrackPrimaryDaughters.push_back(trackPrimaries);
+       theData.ShowerPrimaryDaughters.push_back(showerPrimaries);
+       theData.NPrimaryDaughters.push_back(nTrackPrimaries + nShowerPrimaries);
+       theData.NPrimaryTrackDaughters.push_back(nTrackPrimaries);
+       theData.NPrimaryShowerDaughters.push_back(nShowerPrimaries);
+       theData.TrackStarts.push_back(trackStarts);
+   }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int SubModuleReco::GetChosenNuSliceID()
+{
+    int nNeutrinos = 0;
+    int nuSliceID = -1;
+
+    for (const art::Ptr<recob::PFParticle> &pfp : Vect_PFParticle_SingleOutcome)
+    {
+        if (pfp->IsPrimary() && isNeutrino(pfp->PdgCode()))
+        {
+            ++nNeutrinos;
+
+            const std::vector<art::Ptr<recob::Slice>> nuSlice = Assoc_PFParticleSlice_SingleOutcome->at(pfp.key());
+
+            if (nuSlice.size() != 1)
+                continue;
+
+            nuSliceID = nuSlice.at(0)->ID();
+        }
+    }
+
+    if (nNeutrinos > 1)
+        throw cet::exception("SubModuleReco") << "Too Many Reconstructed Neutrinos In Event!" << std::endl;
+
+    return nuSliceID;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool SubModuleReco::GetPrimaryVertex(const art::Ptr<recob::Slice> &slice, TVector3 &nuVertex3D)
+{
+   auto const* SCE = lar::providerFrom<spacecharge::SpaceChargeService>();
+   const std::vector<art::Ptr<recob::PFParticle>> slicePFPs = Assoc_SlicePFParticle->at(slice.key());
+
+   for (const art::Ptr<recob::PFParticle> &pfp : slicePFPs)
+   {
+      if (pfp->IsPrimary() && isNeutrino(pfp->PdgCode()))
+      {
+         std::vector<art::Ptr<recob::Vertex>> pfpVertex = Assoc_PFParticleVertex->at(pfp.key());
+
+         if (pfpVertex.size() == 0)
+             return false;
+
+         const art::Ptr<recob::Vertex> vtx = pfpVertex.at(0);
+
+         geo::Point_t point = {vtx->position().X(), vtx->position().Y(), vtx->position().Z()};
+         geo::Vector_t sce_corr = SCE->GetPosOffsets(point);
+
+         nuVertex3D = TVector3(vtx->position().X() + sce_corr.X(), vtx->position().Y() - sce_corr.Y(), vtx->position().Z() - sce_corr.Z());
+
+         return true;
+      }
    }
 
-   m_PFPID_TrackIndex.clear(); 
+   return false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SubModuleReco::PrepareInfo(){
-   theData.RecoPrimaryVertex = GetPrimaryVertex();
-
-   // Collect neutrino children (AND CHILDREN OF THE NU CHILD TRACKS)
-   // Do OG reco
-   this->FillPrimaryInfo(false);
-   // Look at reprocessed reco
-   this->FillPrimaryInfo(true);
-
-   theData.NPrimaryDaughters = theData.TrackPrimaryDaughters.size() + theData.ShowerPrimaryDaughters.size();
-   theData.NPrimaryTrackDaughters = theData.TrackPrimaryDaughters.size();
-   theData.NPrimaryShowerDaughters = theData.ShowerPrimaryDaughters.size();
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void SubModuleReco::FillPrimaryInfo(const bool useRepassLabels){
-
-   const std::vector<art::Ptr<recob::PFParticle>> &pfparticleVector(useRepassLabels ? Vect_PFParticle_Reprocessed : Vect_PFParticle);
+void SubModuleReco::FillPrimaryInfo(const art::Ptr<recob::Slice> &slice, const bool useRepassLabels, const TVector3 &nuVertex3D,
+   std::vector<RecoParticle> &trackPrimaries, std::vector<RecoParticle> &showerPrimaries, std::vector<TVector3> &trackStarts)
+{   
+   const std::vector<art::Ptr<recob::PFParticle>> slicePFPs = useRepassLabels ? Assoc_SlicePFParticle_Reprocessed->at(slice.key()) : 
+       Assoc_SlicePFParticle->at(slice.key());
 
    lar_pandora::PFParticleMap pfparticleMap;
-   lar_pandora::LArPandoraHelper::BuildPFParticleMap(pfparticleVector, pfparticleMap);
+   lar_pandora::LArPandoraHelper::BuildPFParticleMap(slicePFPs, pfparticleMap);
 
-   for(const art::Ptr<recob::PFParticle> &pfp : pfparticleVector)
+   int trackCounter = 0;
+
+   for (const art::Ptr<recob::PFParticle> &pfp : slicePFPs)
    {
-
-       if (!useRepassLabels)
+       if (m_modifiedReco && !useRepassLabels)
        {
            bool modified = false;
 
@@ -196,103 +290,63 @@ void SubModuleReco::FillPrimaryInfo(const bool useRepassLabels){
        const int generation = lar_pandora::LArPandoraHelper::GetGeneration(pfparticleMap, pfp);
        const int parentNeutrinoPDG = lar_pandora::LArPandoraHelper::GetParentNeutrino(pfparticleMap, pfp);
 
-       if (!IncludeCosmics)
-       {
-           // zero for CR
-           if (parentNeutrinoPDG == 0)
-               continue;
+       // Do not care about CR
+       if (parentNeutrinoPDG == 0)
+           continue;
 
-           if ((generation != 2) && (generation != 3))
-               continue;
+       // Only care about primaries
+       if (generation != 2)
+           continue;
 
-           if (generation == 3)
-           {
-               const int parentID = pfp->Parent();
+       RecoParticle P = MakeRecoParticle(pfp, useRepassLabels, nuVertex3D);
 
-               if (pfparticleMap.find(parentID) == pfparticleMap.end())
-                   continue;
-
-               if (pfparticleMap.at(parentID)->PdgCode() != 13)
-                   continue;
-           }
-       }
-
-       RecoParticle P = MakeRecoParticle(pfp, useRepassLabels);
-
-       if ((generation == 2) && (parentNeutrinoPDG != 0))
-       {
-           P.Parentage = 1;
-           P.InNuSlice = true;
-       }
-       else if (parentNeutrinoPDG != 0)
-       {         
-           P.Parentage = 2;
-           P.ParentIndex = -999; // idk how to make this work, and it's never used...
-       }
+       P.Parentage = 1;
+       P.InNuSlice = true;
+       P.Key = pfp.key();   
+       P.Self = pfp->Self();
 
        if (P.PDG == 13)
        {
-           theData.TrackPrimaryDaughters.push_back(P);
+           ++trackCounter;
+           P.Index = trackCounter - 1;
+
+           std::vector<art::Ptr<recob::Track>> pfpTracks = useRepassLabels ? Assoc_PFParticleTrack_Reprocessed->at(pfp.key()) : 
+               Assoc_PFParticleTrack->at(pfp.key());
+
+           art::Ptr<recob::Track> trk = pfpTracks.at(0);
+           trackStarts.push_back(TVector3(trk->Start().X(), trk->Start().Y(), trk->Start().Z()));
+           trackPrimaries.push_back(P);
        }
-       else if (P.PDG == 11) theData.ShowerPrimaryDaughters.push_back(P);
+       else if (P.PDG == 11) 
+           showerPrimaries.push_back(P);
    }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-RecoData SubModuleReco::GetInfo(){
-   return theData;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TVector3 SubModuleReco::GetPrimaryVertex(){
-
-   auto const* SCE = lar::providerFrom<spacecharge::SpaceChargeService>();
-
-   for(const art::Ptr<recob::PFParticle> &pfp : Vect_PFParticle){
-
-      if(pfp->IsPrimary() && isNeutrino(pfp->PdgCode())){
-
-         neutrinoID = pfp->Self();
-
-         std::vector<art::Ptr<recob::Vertex>> pfpVertex = Assoc_PFParticleVertex->at(pfp.key());
-
-         for(const art::Ptr<recob::Vertex> &vtx : pfpVertex){
-
-            geo::Point_t point = { vtx->position().X() , vtx->position().Y() , vtx->position().Z() };
-            geo::Vector_t sce_corr = SCE->GetPosOffsets(point);
-
-            return TVector3(vtx->position().X() + sce_corr.X(),vtx->position().Y()-sce_corr.Y(),vtx->position().Z()-sce_corr.Z());
-         }
-      }
-   }
-
-   // If there is no neutrino candidate
-   return TVector3(-1000,-1000,-1000);
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-RecoParticle SubModuleReco::MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels){
-
+RecoParticle SubModuleReco::MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels,
+   const TVector3 &nuVertex3D)
+{
    RecoParticle P;
 
-   P.PDG = pfp->PdgCode();
-
-   //here
    std::vector<art::Ptr<recob::Track>> pfpTracks = useRepassLabels ? Assoc_PFParticleTrack_Reprocessed->at(pfp.key()) : Assoc_PFParticleTrack->at(pfp.key());
    std::vector<art::Ptr<recob::Shower>> pfpShowers = useRepassLabels ? Assoc_PFParticleShower_Reprocessed->at(pfp.key()) : Assoc_PFParticleShower->at(pfp.key());
 
-   if(pfp->PdgCode() == 13 && pfpTracks.size() != 1) P.PDG = 0;
-   if(pfp->PdgCode() == 11 && pfpShowers.size() != 1) P.PDG = 0;
+   // Make sure it has an associated fitted object
+   if ((pfp->PdgCode() == 13 && pfpTracks.size() != 1) || (pfp->PdgCode() == 11 && pfpShowers.size() != 1))
+   {
+       P.PDG = 0;
+       return P;
+   }
+
+   P.PDG = pfp->PdgCode();
 
    GetPFPMetadata(pfp, P, useRepassLabels);
 
-   if(pfpTracks.size() == 1){
+   if (P.PDG == 13)
+   {
       GetTrackData(pfp, P, useRepassLabels);
-      GetVertexData(pfp, P, useRepassLabels);
+      GetVertexData(pfp, P, useRepassLabels, nuVertex3D);
    }
 
    return P;
@@ -321,8 +375,8 @@ void SubModuleReco::GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp, RecoP
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SubModuleReco::GetTrackData(const art::Ptr<recob::PFParticle> &pfp, RecoParticle &P, const bool useRepassLabels){
-
+void SubModuleReco::GetTrackData(const art::Ptr<recob::PFParticle> &pfp, RecoParticle &P, const bool useRepassLabels)
+{
    std::vector<art::Ptr<recob::Track>> pfpTracks = useRepassLabels ? Assoc_PFParticleTrack_Reprocessed->at(pfp.key()) : Assoc_PFParticleTrack->at(pfp.key());
 
    if(pfpTracks.size() != 1) return;
@@ -330,76 +384,9 @@ void SubModuleReco::GetTrackData(const art::Ptr<recob::PFParticle> &pfp, RecoPar
    art::Ptr<recob::Track> trk = pfpTracks.at(0);
 
    // Sets track length/position related variables
-   SetTrackVariables(P,trk);
+   SetTrackVariables(P, trk);
 
-   if(!IsData) TruthMatch(trk, P, useRepassLabels);
-
-   if(DoGetPIDs) GetPIDs(trk, P, useRepassLabels);
-
-   theData.TrackStarts.push_back(TVector3(trk->Start().X(),trk->Start().Y(),trk->Start().Z()));
-   P.Index = theData.TrackStarts.size() - 1;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void SubModuleReco::TruthMatch(const art::Ptr<recob::Track> &trk, RecoParticle &P, const bool useRepassLabels){
-
-   std::vector<art::Ptr<recob::Hit>> hits = useRepassLabels ? Assoc_TrackHit_Reprocessed->at(trk.key()) : Assoc_TrackHit->at(trk.key());
-
-   std::unordered_map<int,int>  trkide;
-   int maxhits=-1;
-
-   simb::MCParticle const* matchedParticle = NULL;
-
-   std::vector<simb::MCParticle const*> particleVec;
-   std::vector<anab::BackTrackerHitMatchingData const*> matchVec;
-
-   for(size_t i_hit=0;i_hit<hits.size();++i_hit){
-
-      particleVec.clear();
-      matchVec.clear();
-      ParticlesPerHit->get(hits[i_hit].key(),particleVec,matchVec);
-
-      for(size_t i_particle=0;i_particle<particleVec.size();++i_particle){
-
-         trkide[particleVec[i_particle]->TrackId()]++; 
-
-         //new method - choose particle depositing energy in the most hits
-         if(trkide[particleVec[i_particle]->TrackId()] > maxhits){
-            maxhits = trkide[particleVec[i_particle]->TrackId()];
-            matchedParticle = particleVec[i_particle];
-         }
-      }
-   }
-
-   if(matchedParticle != NULL){ 
-
-      SimParticle SP = MakeSimParticle(*matchedParticle);
-            
-      SP.Origin = G4T->GetOrigin(matchedParticle->TrackId());
-      G4T->MCTruthMatch(SP);
- 
-      P.HasTruth = true;
-      P.MCTruthIndex = SP.MCTruthIndex;
-      P.TrackTruePDG = SP.PDG;
-      P.TrackTrueE = SP.E;
-      P.TrackTruePx = SP.Px;
-      P.TrackTruePy = SP.Py;
-      P.TrackTruePz = SP.Pz;
-      P.TrackTrueEndE = SP.E;
-      P.TrackTrueEndPx = SP.EndPx;
-      P.TrackTrueEndPy = SP.EndPy;
-      P.TrackTrueEndPz = SP.EndPz;
-      P.TrackTrueModMomentum = SP.ModMomentum;
-      P.TrackTrueEndModMomentum = SP.EndModMomentum;
-      P.TrackTrueKE = SP.KE;
-      P.TrackTrueEndKE = SP.EndKE;
-      P.TrackTrueLength = SP.Travel;
-      P.TrackTrueOrigin = SP.Origin;
-      P.TrackTruthPurity = (double)maxhits/hits.size();
-      P.NMatchedHits = maxhits;
-   }
-   else P.HasTruth = false;
+   if (m_doGetPIDs) GetPIDs(trk, P, useRepassLabels);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -410,7 +397,7 @@ void SubModuleReco::GetPIDs(const art::Ptr<recob::Track> &trk,RecoParticle &P, c
    std::vector<art::Ptr<anab::ParticleID>> trackPID = useRepassLabels ? Assoc_TrackPID_Reprocessed->at(trk.key()) : Assoc_TrackPID->at(trk.key());
    std::vector<anab::sParticleIDAlgScores> AlgScoresVec = trackPID.at(0)->ParticleIDAlgScores();
 
-   PIDStore store = PIDCalc.GetPIDs(trk,caloFromTrack,AlgScoresVec);
+   PIDStore store = m_PIDCalc.GetPIDs(trk,caloFromTrack,AlgScoresVec);
 
    P.Track_LLR_PID = store.LLR;
    P.Track_LLR_PID_Kaon = store.LLR_Kaon;
@@ -420,180 +407,34 @@ void SubModuleReco::GetPIDs(const art::Ptr<recob::Track> &trk,RecoParticle &P, c
    P.MeandEdX_Plane2 = store.MeandEdX_Plane2;
    P.MeandEdX_ThreePlane = store.MeandEdX_3Plane;
    P.Track_Bragg_PID_Kaon = store.Bragg_Kaon_3Plane;
-
-/*
-   // LLR PID Calculation
-
-   double this_llr_pid=0;
-   double this_llr_pid_score=0;
-   double this_llr_pid_kaon=0;
-   double this_llr_pid_score_kaon=0;
-   
-   double this_llr_pid_kaon_partial = 0;
-   double this_llr_pid_score_kaon_partial = 0;
-
-   for(auto const &calo : caloFromTrack){
-
-      auto const &plane = calo->PlaneID().Plane;
-      auto const &dedx_values = calo->dEdx();
-      auto const &rr = calo->ResidualRange();
-      auto const &pitch = calo->TrkPitchVec();
-      std::vector<std::vector<float>> par_values;
-      par_values.push_back(rr);
-      par_values.push_back(pitch);
-
-      // Get parital length PIDs
-      std::vector<std::vector<float>> par_values_partial;
-      std::vector<float> dedx_values_partial,rr_partial,pitch_partial;      
-      if(calo->dEdx().size() != calo->ResidualRange().size() || calo->ResidualRange().size() != calo->TrkPitchVec().size())
-         throw cet::exception("SubModuleReco") << "Track calo point list size mismatch" << std::endl;
-      for(size_t i_p=0;i_p<calo->dEdx().size();i_p++){
-         if(rr.at(i_p) > ResRangeCutoff) continue;
-         dedx_values_partial.push_back(calo->dEdx().at(i_p));
-         rr_partial.push_back(calo->ResidualRange().at(i_p));
-         pitch_partial.push_back(calo->TrkPitchVec().at(i_p));        
-      }
-      par_values_partial.push_back(rr_partial);
-      par_values_partial.push_back(pitch_partial);
-  
-      if(calo->ResidualRange().size() == 0) continue;
-
-      float calo_energy = 0;
-      for(size_t i=0;i<dedx_values.size();i++)
-         calo_energy += dedx_values[i] * pitch[i];
-
-      float llr_pid = llr_pid_calculator.LLR_many_hits_one_plane(dedx_values,par_values,plane);
-      float llr_pid_kaon = llr_pid_calculator_kaon.LLR_many_hits_one_plane(dedx_values,par_values,plane);
-      this_llr_pid += llr_pid;
-      this_llr_pid_kaon += llr_pid_kaon;
-
-     // Partial length calculation
-     float calo_energy_partial = 0;
-      for(size_t i=0;i<dedx_values_partial.size();i++)
-         calo_energy_partial += dedx_values_partial[i] * pitch_partial[i];
-
-      float llr_pid_kaon_partial = llr_pid_calculator_kaon.LLR_many_hits_one_plane(dedx_values_partial,par_values_partial,plane);
-      this_llr_pid_kaon_partial += llr_pid_kaon_partial;     
-   }
-
-   this_llr_pid_score = atan(this_llr_pid/100.)*2/3.14159266;
-   this_llr_pid_score_kaon = atan(this_llr_pid_kaon/100.)*2/3.14159266;
-   this_llr_pid_score_kaon_partial = atan(this_llr_pid_kaon_partial/100.)*2/3.14159266;
-
-   P.Track_LLR_PID = this_llr_pid_score;
-   P.Track_LLR_PID_Kaon = this_llr_pid_score_kaon;
-   P.Track_LLR_PID_Kaon_Partial = this_llr_pid_score_kaon_partial;
-   */
-
-
-/*
-   // LLR PID Scores Calculation
-   LLRPID_Result LLPIDs = LLRPIDCalc.GetScores(caloFromTrack);
-   P.Track_LLR_PID = LLPIDs.Score;
-   P.Track_LLR_PID_Kaon = LLPIDs.Score_Kaon;
-   P.Track_LLR_PID_Kaon_Partial = LLPIDs.Score_Kaon_Partial;
-
-   // Mean dE/dX Calculation
-   dEdXStore dEdXs = dEdXCalc.ThreePlaneMeandEdX(trk,caloFromTrack);
-   P.MeandEdX_Plane0 = dEdXs.Plane0;
-   P.MeandEdX_Plane1 = dEdXs.Plane1;
-   P.MeandEdX_Plane2 = dEdXs.Plane2;
-   P.MeandEdX_ThreePlane = dEdXs.ThreePlaneAverage;
-*/
-
-
-/*
-   // 3 Plane Proton PID (Pip Hamilton)
-   std::vector<art::Ptr<anab::ParticleID>> trackPID = Assoc_TrackPID->at(trk.key());
-
-   std::vector<anab::sParticleIDAlgScores> AlgScoresVec = trackPID.at(0)->ParticleIDAlgScores();
-
-   for(size_t i_algscore=0;i_algscore<AlgScoresVec.size();i_algscore++){
-
-      anab::sParticleIDAlgScores AlgScore = AlgScoresVec.at(i_algscore);
-
-      if(TMath::Abs(AlgScore.fAssumedPdg) == 2212 && AlgScore.fAlgName=="ThreePlaneProtonPID" && anab::kVariableType(AlgScore.fVariableType) == anab::kLikelihood && anab::kTrackDir(AlgScore.fTrackDir) == anab::kForward)
-         P.TrackPID = std::log(AlgScore.fValue);
-
-      if(TMath::Abs(AlgScore.fAssumedPdg) == 321) std::cout << AlgScore.fAlgName << std::endl;
-
-   }
-*/
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SubModuleReco::GetVertexData(const art::Ptr<recob::PFParticle> &pfp, RecoParticle &P, const bool useRepassLabels){
-
+void SubModuleReco::GetVertexData(const art::Ptr<recob::PFParticle> &pfp, RecoParticle &P, const bool useRepassLabels,
+   const TVector3 &nuVertex3D)
+{
    std::vector<art::Ptr<recob::Vertex>> pfpVertex = useRepassLabels ? Assoc_PFParticleVertex_Reprocessed->at(pfp.key()) : Assoc_PFParticleVertex->at(pfp.key());
 
    auto const* SCE = lar::providerFrom<spacecharge::SpaceChargeService>();
 
-   for(const art::Ptr<recob::Vertex> &vtx : pfpVertex){
+   if (pfpVertex.size() == 0)
+       return;
 
-      geo::Point_t point = {vtx->position().X(),vtx->position().Y(),vtx->position().Z()};                
-      geo::Vector_t sce_corr = SCE->GetPosOffsets(point);
+   const art::Ptr<recob::Vertex> vtx = pfpVertex.at(0);
 
-      TVector3 pos(vtx->position().X()+sce_corr.X(),vtx->position().Y()-sce_corr.Y(),vtx->position().Z()-sce_corr.Z());
+   geo::Point_t point = {vtx->position().X(),vtx->position().Y(),vtx->position().Z()};
+   geo::Vector_t sce_corr = SCE->GetPosOffsets(point);
+   TVector3 pos(vtx->position().X()+sce_corr.X(),vtx->position().Y()-sce_corr.Y(),vtx->position().Z()-sce_corr.Z());
 
-      P.SetVertex(pos);
-      P.Displacement = (pos-theData.RecoPrimaryVertex).Mag();
-
-   }
-
+   P.SetVertex(pos);
+   P.Displacement = (pos - nuVertex3D).Mag();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SubModuleReco::SetIndices(std::vector<bool> IsSignal,std::vector<bool> IsSignalSigmaZero){
-      
-   bool ContainsSignal = std::find(IsSignal.begin(),IsSignal.end(),true) == IsSignal.end() 
-                      || std::find(IsSignalSigmaZero.begin(),IsSignalSigmaZero.end(),true) == IsSignalSigmaZero.end();
-
-   bool found_muon=false,found_decayproton=false,found_decaypion=false;
-
-   for(size_t i_tr=0;i_tr<theData.TrackPrimaryDaughters.size();i_tr++){
-
-      RecoParticle P = theData.TrackPrimaryDaughters.at(i_tr);
-
-      if(!found_muon && abs(P.TrackTruePDG) == 13 && P.TrackTrueOrigin == 1){ 
-         theData.TrueMuonIndex = P.Index;
-         found_muon = true; 
-      }
-
-      if(ContainsSignal && !found_decayproton && P.TrackTruePDG == 2212 && P.TrackTrueOrigin == 2){
-         theData.TrueDecayProtonIndex = P.Index;
-         found_decayproton = true;
-      }
-
-      if(ContainsSignal && !found_decaypion && P.TrackTruePDG == -211 && P.TrackTrueOrigin == 2){
-         theData.TrueDecayPionIndex = P.Index;
-         found_decaypion = true;
-      }
-   }
-
-   for(size_t i_sh=0;i_sh<theData.ShowerPrimaryDaughters.size();i_sh++){
-
-      RecoParticle P = theData.ShowerPrimaryDaughters.at(i_sh);
-
-      if(!found_muon && abs(P.TrackTruePDG) == 13 && P.TrackTrueOrigin == 1){ 
-         theData.TrueMuonIndex = P.Index;
-         found_muon = true; 
-      }
-
-      if(ContainsSignal && !found_decayproton && P.TrackTruePDG == 2212 && P.TrackTrueOrigin == 2){
-         theData.TrueDecayProtonIndex = P.Index;
-         found_decayproton = true;
-      }
-
-      if(ContainsSignal && !found_decaypion && P.TrackTruePDG == -211 && P.TrackTrueOrigin == 2){
-         theData.TrueDecayPionIndex = P.Index;
-         found_decaypion = true;
-      }
-   }
-
-if(ContainsSignal && found_decayproton && found_decaypion) theData.GoodReco = true;
-
+RecoData SubModuleReco::GetInfo(){
+   return theData;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

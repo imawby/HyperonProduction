@@ -12,6 +12,7 @@
 #include "fhiclcpp/ParameterSet.h"
 #include "cetlib_except/exception.h"
 
+#include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/Track.h"
 #include "lardataobj/RecoBase/Shower.h"
@@ -31,7 +32,6 @@
 #include "ubana/HyperonProduction/Objects/RecoParticle.h"
 #include "ubana/HyperonProduction/Objects/Helpers.h"
 #include "ubana/HyperonProduction/Alg/PIDManager.h"
-#include "ubana/HyperonProduction/Modules/SubModules/SubModuleG4Truth.h"
 #include "ubana/HyperonProduction/Alg/BDTHandle.h"
 
 // Pandora is the best
@@ -45,51 +45,39 @@ namespace hyperon {
 
 struct RecoData {
 
-   TVector3 RecoPrimaryVertex = TVector3(-1000,-1000,-1000);
-
-   int NPrimaryDaughters; 
-   int NPrimaryTrackDaughters;
-   int NPrimaryShowerDaughters;
-
-   std::vector<RecoParticle> TrackPrimaryDaughters;
-   std::vector<RecoParticle> ShowerPrimaryDaughters;
-
-   std::vector<TVector3> TrackStarts;
-
-   size_t TrueMuonIndex = -1;
-   size_t TrueDecayProtonIndex = -1;
-   size_t TrueDecayPionIndex = -1;
-
-   bool GoodReco = false;
+   // Information for each slice 
+   int ChoosenNuSliceID;
+   std::vector<int> SliceID;
+   std::vector<TVector3> RecoPrimaryVertex;
+   std::vector<int> NPrimaryDaughters; 
+   std::vector<int> NPrimaryTrackDaughters;
+   std::vector<int> NPrimaryShowerDaughters;
+   std::vector<std::vector<RecoParticle>> TrackPrimaryDaughters;
+   std::vector<std::vector<RecoParticle>> ShowerPrimaryDaughters;
+   std::vector<std::vector<TVector3>> TrackStarts;
 };
 
 class SubModuleReco {
 
    public:
-
-      SubModuleReco(art::Event const& e,bool isdata,string pfparticlelabel,string tracklabel,
-                    string showerlabel,string vertexlabel,string pidlabel,string calolabel,string hitlabel,
-                    string hittruthassnlabel,string trackhitassnlabel,string metadatalabel,string genlabel,
-                    string g4label, string pfparticlelabelReprocessed, string tracklabelReprocessed,
-                    string showerlabelReprocessed, string vertexlabelReprocessed, string pidlabelReprocessed,
-                    string calolabelReprocessed, string hitlabelReprocessed,
-                    string trackhitassnlabelReprocessed, string metadatalabelReprocessed,
-                    string modifiedPFPListLabel,
-                    bool dogetpids,bool includecosmics, bool modifiedReco);
-
-      SubModuleReco(art::Event const& e,bool isdata,fhicl::ParameterSet pset);
+      SubModuleReco(art::Event const& e,bool isdata, fhicl::ParameterSet pset);
 
       void PrepareInfo(); 
-      void FillPrimaryInfo(const bool useRepassLabels);
-      TVector3 GetPrimaryVertex();
+      bool GetPrimaryVertex(const art::Ptr<recob::Slice> &slice, TVector3 &nuVertex3D);
+      void FillPrimaryInfo(const art::Ptr<recob::Slice> &slice, const bool useRepassLabels, const TVector3 &nuVertex3D, 
+          std::vector<RecoParticle> &trackPrimaries, std::vector<RecoParticle> &showerPrimaries, std::vector<TVector3> &trackStarts);
       void SetIndices(std::vector<bool> IsSignal,std::vector<bool> IsSignalSigmaZero);
-
       RecoData GetInfo();
-      void SetResRangeCutoff(double cutoff){ ResRangeCutoff = cutoff; }
-
-     
+      void SetResRangeCutoff(double cutoff){ m_resRangeCutoff = cutoff; }
 
    private:
+      art::Handle<std::vector<recob::PFParticle>> Handle_PFParticle_SingleOutcome;
+      std::vector<art::Ptr<recob::PFParticle>> Vect_PFParticle_SingleOutcome;
+
+      art::Handle<std::vector<recob::Slice>> Handle_Slice;
+      std::vector<art::Ptr<recob::Slice>> Vect_Slice;
+      art::Handle<std::vector<recob::Slice>> Handle_Slice_Reprocessed;
+      std::vector<art::Ptr<recob::Slice>> Vect_Slice_Reprocessed;
 
       art::Handle<std::vector<recob::PFParticle>> Handle_PFParticle;
       std::vector<art::Ptr<recob::PFParticle>> Vect_PFParticle;
@@ -113,8 +101,9 @@ class SubModuleReco {
       art::Handle<std::vector<recob::Hit>> Handle_Hit_Reprocessed;
       std::vector<art::Ptr<recob::Hit>> Vect_Hit_Reprocessed;
 
-      RecoParticle MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels);
+      art::FindManyP<recob::Slice>* Assoc_PFParticleSlice_SingleOutcome; 
 
+      art::FindManyP<recob::PFParticle>* Assoc_SlicePFParticle;
       art::FindManyP<recob::Vertex>* Assoc_PFParticleVertex;
       art::FindManyP<recob::Track>* Assoc_PFParticleTrack;
       art::FindManyP<recob::Shower>* Assoc_PFParticleShower;
@@ -125,6 +114,7 @@ class SubModuleReco {
       art::FindManyP<anab::Calorimetry>* Assoc_TrackCalo;
       art::FindManyP<anab::ParticleID>* Assoc_TrackPID;
 
+      art::FindManyP<recob::PFParticle>* Assoc_SlicePFParticle_Reprocessed;
       art::FindManyP<recob::Vertex>* Assoc_PFParticleVertex_Reprocessed;
       art::FindManyP<recob::Track>* Assoc_PFParticleTrack_Reprocessed;
       art::FindManyP<recob::Shower>* Assoc_PFParticleShower_Reprocessed;
@@ -140,24 +130,43 @@ class SubModuleReco {
       searchingfornuesk::LLRPIDK llr_pid_calculator_kaon;
       searchingfornuesk::KaonProtonLookUpParameters kaonproton_parameters;
 
-      SubModuleG4Truth* G4T = nullptr;
-      PIDManager PIDCalc;      
-
       RecoData theData;
-      size_t neutrinoID = 99999;
-      std::map<size_t,int> m_PFPID_TrackIndex;
 
+      PIDManager m_PIDCalc;
+      bool m_isData;
+      std::string m_GeneratorModuleLabel;
+      std::string m_G4ModuleLabel;
+      std::string m_PandoraSingleOutcomeModuleLabel;
+      std::string m_PandoraModuleLabel;
+      std::string m_PandoraInstanceLabel;
+      std::string m_TrackModuleLabel;
+      std::string m_ShowerModuleLabel;
+      std::string m_PIDModuleLabel;
+      std::string m_CaloModuleLabel;
+      std::string m_HitModuleLabel;
+      bool m_modifiedReco;
+      std::string m_PandoraModuleLabelReprocessed;
+      std::string m_PandoraInstanceLabelReprocessed;
+      std::string m_TrackModuleLabelReprocessed;
+      std::string m_ShowerModuleLabelReprocessed;
+      std::string m_PIDModuleLabelReprocessed;
+      std::string m_CaloModuleLabelReprocessed;
+      std::string m_HitModuleLabelReprocessed;
+      std::string m_ModifiedPFPListLabel;
+      bool m_doGetPIDs;
+      double m_resRangeCutoff; 
+      bool m_includeCosmics;
+      bool m_reducedFileSize;
+
+      int GetChosenNuSliceID();
+      RecoParticle MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels,
+          const TVector3 &nuVertex3D);
       void GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
       void GetTrackData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
-      void TruthMatch(const art::Ptr<recob::Track> &trk,RecoParticle &P, const bool useRepassLabels);
       void GetPIDs(const art::Ptr<recob::Track> &trk,RecoParticle &P, const bool useRepassLabels);
+      void GetVertexData(const art::Ptr<recob::PFParticle> &pfp, RecoParticle &P, const bool useRepassLabels,
+          const TVector3 &nuVertex3D);
       void GetVertexData(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);
-
-      bool IsData;
-      bool DoGetPIDs=true;
-      double ResRangeCutoff=5; 
-      const bool IncludeCosmics;
-      const bool m_modifiedReco;
 };
 
 }

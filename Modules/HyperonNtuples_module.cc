@@ -39,6 +39,7 @@
 #include "ubana/HyperonProduction/Objects/SimParticle.h"
 #include "ubana/HyperonProduction/Objects/RecoParticle.h"
 #include "ubana/HyperonProduction/Objects/Helpers.h"
+#include "ubana/HyperonProduction/Objects/LinkDef.h"
 
 //algorithms
 #include "ubana/HyperonProduction/Alg/ConnectednessHelper.h"
@@ -47,6 +48,7 @@
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleGeneratorTruth.h"
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleG4Truth.h"
 #include "ubana/HyperonProduction/Modules/SubModules/SubModuleReco.h"
+#include "ubana/HyperonProduction/Modules/SubModules/SubModuleValidation.h"
 
 namespace hyperon {
    class HyperonNtuples;
@@ -104,7 +106,6 @@ class hyperon::HyperonNtuples : public art::EDAnalyzer {
       // Flags applying to the entire event
       bool t_EventHasNeutronScatter;
       bool t_EventHasHyperon;
-      bool t_GoodReco;
 
       // Flags applying to each MCTruth
       std::vector<bool> t_InActiveTPC;
@@ -133,48 +134,52 @@ class hyperon::HyperonNtuples : public art::EDAnalyzer {
       std::vector<double> t_TruePrimaryVertex_X;
       std::vector<double> t_TruePrimaryVertex_Y;
       std::vector<double> t_TruePrimaryVertex_Z;
-      //TVector3 t_TruePrimaryVertex;
-      //TVector3 t_DecayVertex;
       std::vector<double> t_DecayVertex_X;
       std::vector<double> t_DecayVertex_Y;
       std::vector<double> t_DecayVertex_Z;
 
-      int t_NPrimaryDaughters;
-      int t_NPrimaryTrackDaughters;
-      int t_NPrimaryShowerDaughters;
-
-      std::vector<RecoParticle> t_TrackPrimaryDaughters;
-      std::vector<RecoParticle> t_ShowerPrimaryDaughters;   
-
-      TVector3 t_RecoPrimaryVertex;
-
-      std::vector<RecoParticle> t_RepassTrackPrimaryDaughters;
-      std::vector<RecoParticle> t_RepassShowerPrimaryDaughters;   
-
       ////////////////////////////
-      //   Connectedness test   //
+      //   Output for each slice
       ////////////////////////////
 
-      std::vector<std::vector<int>> t_Conn_SeedIndexes_Plane0;
-      std::vector<std::vector<int>> t_Conn_OutputIndexes_Plane0;
-      std::vector<std::vector<int>> t_Conn_OutputSizes_Plane0;
-      std::vector<std::vector<int>> t_Conn_SeedChannels_Plane0;
-      std::vector<std::vector<int>> t_Conn_SeedTicks_Plane0;
+      int t_ChoosenNuSliceID;
+      std::vector<int> t_SliceID;
 
-      std::vector<std::vector<int>> t_Conn_SeedIndexes_Plane1;
-      std::vector<std::vector<int>> t_Conn_OutputIndexes_Plane1;
-      std::vector<std::vector<int>> t_Conn_OutputSizes_Plane1;
-      std::vector<std::vector<int>> t_Conn_SeedChannels_Plane1;
-      std::vector<std::vector<int>> t_Conn_SeedTicks_Plane1;
+      std::vector<bool> t_GoodReco;
+      std::vector<int> t_NPrimaryDaughters;
+      std::vector<int> t_NPrimaryTrackDaughters;
+      std::vector<int> t_NPrimaryShowerDaughters;
 
-      std::vector<std::vector<int>> t_Conn_SeedIndexes_Plane2;
-      std::vector<std::vector<int>> t_Conn_OutputIndexes_Plane2;
-      std::vector<std::vector<int>> t_Conn_OutputSizes_Plane2;
-      std::vector<std::vector<int>> t_Conn_SeedChannels_Plane2;
-      std::vector<std::vector<int>> t_Conn_SeedTicks_Plane2;
+      std::vector<std::vector<RecoParticle>> t_TrackPrimaryDaughters;
+      std::vector<std::vector<RecoParticle>> t_ShowerPrimaryDaughters;   
+      //std::vector<TVector3> t_RecoPrimaryVertex;
+      std::vector<double> t_RecoPrimaryVertexX;
+      std::vector<double> t_RecoPrimaryVertexY;
+      std::vector<double> t_RecoPrimaryVertexZ;
 
-      //std::vector<std::string> t_SysDials;
-      //std::vector<std::vector<std::vector<double>>> t_SysWeights;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedIndexes_Plane0;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputIndexes_Plane0;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputSizes_Plane0;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedChannels_Plane0;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedTicks_Plane0;
+
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedIndexes_Plane1;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputIndexes_Plane1;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputSizes_Plane1;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedChannels_Plane1;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedTicks_Plane1;
+
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedIndexes_Plane2;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputIndexes_Plane2;
+      std::vector<std::vector<std::vector<int>>> t_Conn_OutputSizes_Plane2;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedChannels_Plane2;
+      std::vector<std::vector<std::vector<int>>> t_Conn_SeedTicks_Plane2;
+
+      int t_trueNuSliceID;
+      int t_trueMuonTrackID;
+      int t_trueProtonTrackID;
+      int t_truePionTrackID;
+      int t_trueGammaTrackID;
 
       std::vector<std::string> t_SysDials;
       std::vector<std::vector<double>> t_SysWeights;
@@ -199,11 +204,12 @@ class hyperon::HyperonNtuples : public art::EDAnalyzer {
       bool f_GetG4Info;
       bool f_GetRecoInfo;
       bool f_GetConnInfo;
+      bool f_GetValidationInfo;
 
       fhicl::ParameterSet f_Generator;
       fhicl::ParameterSet f_G4;
       fhicl::ParameterSet f_Reco;
-      std::vector<fhicl::ParameterSet> f_RecoRepass;
+      fhicl::ParameterSet f_Validation;
       std::string f_WireLabel;
       std::vector<art::InputTag> f_WeightLabels;
       std::string f_POTSummaryLabel;
@@ -224,20 +230,21 @@ class hyperon::HyperonNtuples : public art::EDAnalyzer {
 
 hyperon::HyperonNtuples::HyperonNtuples(fhicl::ParameterSet const& p)
    : EDAnalyzer{p},
-   f_GetGeneratorInfo(p.get<bool>("GetGeneratorInfo",true)),   
-   f_GetG4Info(p.get<bool>("GetG4Info",true)),   
-   f_GetRecoInfo(p.get<bool>("GetRecoInfo",true)),   
-   f_GetConnInfo(p.get<bool>("GetConnInfo",true)),   
+   f_GetGeneratorInfo(p.get<bool>("GetGeneratorInfo", true)),   
+   f_GetG4Info(p.get<bool>("GetG4Info", true)),   
+   f_GetRecoInfo(p.get<bool>("GetRecoInfo", true)),   
+   f_GetConnInfo(p.get<bool>("GetConnInfo", true)),   
+   f_GetValidationInfo(p.get<bool>("GetValidationInfo", true)),
    f_Generator(p.get<fhicl::ParameterSet>("Generator")),
    f_G4(p.get<fhicl::ParameterSet>("Geant4")),
    f_Reco(p.get<fhicl::ParameterSet>("Reco")),
-   f_RecoRepass(p.get<std::vector<fhicl::ParameterSet>>("RecoRepass",{})),
+   f_Validation(p.get<fhicl::ParameterSet>("Validation")),
    f_WireLabel(p.get<std::string>("WireLabel")),
    f_WeightLabels(p.get<std::vector<art::InputTag>>("WeightCalculators",{})),
    f_POTSummaryLabel(p.get<std::string>("POTSummaryLabel")),
    f_IsData(p.get<bool>("IsData")),
    f_Debug(p.get<bool>("Debug",false)),
-   Conn_Helper(p.get<bool>("DrawConnectedness",false))   // ,
+   Conn_Helper(p.get<bool>("DrawConnectedness",false))
 {
    if(f_WeightLabels.size()){
       std::cout << "Getting weights from data products with tags:" << std::endl;
@@ -273,7 +280,6 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
    t_IsAssociatedHyperon.clear();
    t_IsSignal.clear();	
    t_IsSignalSigmaZero.clear();	
-   t_GoodReco = false;
    t_EventHasNeutronScatter = false;
    t_EventHasHyperon = false;
 
@@ -295,17 +301,21 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
    t_DecayVertex_Y.clear();
    t_DecayVertex_Z.clear();
 
-   t_NPrimaryDaughters = 0; //number of primary daughters
-   t_NPrimaryTrackDaughters=0; //num of track like primary daughters
-   t_NPrimaryShowerDaughters=0; //num of shower like primary daughters
+   t_ChoosenNuSliceID = -1;
+   t_SliceID.clear();
+
+   t_GoodReco.clear();
+   t_NPrimaryDaughters.clear(); //number of primary daughters
+   t_NPrimaryTrackDaughters.clear(); //num of track like primary daughters
+   t_NPrimaryShowerDaughters.clear(); //num of shower like primary daughters
 
    t_TrackPrimaryDaughters.clear();
    t_ShowerPrimaryDaughters.clear();
 
-   t_RecoPrimaryVertex.SetXYZ(-1000,-1000,-1000); //position of reco'd primary vertex
-
-   t_RepassTrackPrimaryDaughters.clear();
-   t_RepassShowerPrimaryDaughters.clear();
+   //t_RecoPrimaryVertex.clear(); //.SetXYZ(-1000,-1000,-1000); //position of reco'd primary vertex
+   t_RecoPrimaryVertexX.clear();
+   t_RecoPrimaryVertexY.clear();
+   t_RecoPrimaryVertexZ.clear();
 
    t_Conn_SeedIndexes_Plane0.clear();
    t_Conn_OutputIndexes_Plane0.clear();
@@ -325,6 +335,12 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
    t_Conn_SeedChannels_Plane2.clear();
    t_Conn_SeedTicks_Plane2.clear();
 
+   t_trueNuSliceID = -1;
+   t_trueMuonTrackID = -1;
+   t_trueProtonTrackID = -1;
+   t_truePionTrackID = -1;
+   t_trueGammaTrackID = -1;
+
    t_SysDials.clear();
    t_SysWeights.clear();
 
@@ -335,13 +351,16 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
    t_subrun = e.subRun();
    t_event = e.event();
 
+   //////////////////////////////
    // Event Generator Info
+   //////////////////////////////
+   SubModuleGeneratorTruth* Generator_SM(nullptr);
 
-   if(!f_IsData && f_GetGeneratorInfo){
-
+   if (!f_IsData && f_GetGeneratorInfo)
+   {
       if(f_Debug) std::cout << "Getting EG Info" << std::endl;
 
-      SubModuleGeneratorTruth* Generator_SM = new SubModuleGeneratorTruth(e,f_Generator);
+      Generator_SM = new SubModuleGeneratorTruth(e,f_Generator);
       GeneratorTruth GenT = Generator_SM->GetGeneratorTruth();
 
       t_Weight *= GenT.Weight;
@@ -355,17 +374,18 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
       t_TruePrimaryVertex_Z = GenT.TruePrimaryVertex_Z;
 
       t_EventHasFinalStateNeutron = GenT.EventHasFinalStateNeutron;
-
-      delete Generator_SM;
    }
 
+   //////////////////////////////
    // G4 Info
+   //////////////////////////////
+   SubModuleG4Truth* G4_SM(nullptr);
 
-   if(!f_IsData && f_GetG4Info){
-
+   if (!f_IsData && f_GetG4Info)
+   {
       if(f_Debug) std::cout << "Getting G4 Info" << std::endl;
 
-      SubModuleG4Truth* G4_SM = new SubModuleG4Truth(e,f_G4);
+      G4_SM = new SubModuleG4Truth(e, f_G4);
       G4Truth G4T = G4_SM->GetG4Info();
 
       t_InActiveTPC = G4T.InActiveTPC;
@@ -398,133 +418,90 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
          t_IsSignal[i_t] = t_Mode.at(i_t) == "HYP" && t_InActiveTPC.at(i_t) && t_Neutrino.at(i_t).PDG == -14 && t_IsLambdaCharged.at(i_t) && !t_IsAssociatedHyperon.at(i_t);
          t_IsSignalSigmaZero[i_t] = t_Mode.at(i_t) == "HYP" && t_InActiveTPC.at(i_t) && t_Neutrino.at(i_t).PDG == -14 && t_IsSigmaZeroCharged.at(i_t) && !t_IsAssociatedHyperon.at(i_t);
       }
-
-      delete G4_SM;
    }
 
+   //////////////////////////////
    // Reconstructed Info
-
-   if(f_GetRecoInfo){
-
+   //////////////////////////////
+   SubModuleReco* Reco_SM(nullptr);
+   SubModuleValidation* Validation_SM(nullptr);
+   if (f_GetRecoInfo)
+   {
       if(f_Debug) std::cout << "Getting Reconstructed Info" << std::endl;
 
-      SubModuleReco* Reco_SM = new SubModuleReco(e,f_IsData,f_Reco);
+      Reco_SM = new SubModuleReco(e,f_IsData,f_Reco);
       Reco_SM->PrepareInfo();
-      Reco_SM->SetIndices(t_IsSignal,t_IsSignalSigmaZero);
+      //Reco_SM->SetIndices(t_IsSignal,t_IsSignalSigmaZero);
       RecoData RecoD =  Reco_SM->GetInfo();   
 
+      t_ChoosenNuSliceID = RecoD.ChoosenNuSliceID;
+      t_SliceID = RecoD.SliceID;
       t_NPrimaryDaughters = RecoD.NPrimaryDaughters;
       t_NPrimaryTrackDaughters = RecoD.NPrimaryTrackDaughters;
       t_NPrimaryShowerDaughters = RecoD.NPrimaryShowerDaughters;
       t_TrackPrimaryDaughters = RecoD.TrackPrimaryDaughters;
       t_ShowerPrimaryDaughters = RecoD.ShowerPrimaryDaughters;
-      t_RecoPrimaryVertex = RecoD.RecoPrimaryVertex;
-      t_GoodReco = RecoD.GoodReco;
 
-      // Results of connectedness test on different combinations of tracks
-
-      if(f_Debug) std::cout << "Performing Connectedness Tests" << std::endl;
-
-      if(f_GetConnInfo){
-
-         CTOutcome ConnData = Conn_Helper.PrepareAndTestEvent(e,f_WireLabel,RecoD.TrackStarts);   
-
-         t_Conn_SeedIndexes_Plane0 = ConnData.SeedIndexes_Plane0;
-         t_Conn_OutputIndexes_Plane0 = ConnData.OutputIndexes_Plane0;
-         t_Conn_OutputSizes_Plane0 = ConnData.OutputSizes_Plane0;
-         t_Conn_SeedChannels_Plane0 = ConnData.SeedChannels_Plane0;
-         t_Conn_SeedTicks_Plane0 = ConnData.SeedTicks_Plane0;
-         t_Conn_SeedIndexes_Plane1 = ConnData.SeedIndexes_Plane1;
-         t_Conn_OutputIndexes_Plane1 = ConnData.OutputIndexes_Plane1;
-         t_Conn_OutputSizes_Plane1 = ConnData.OutputSizes_Plane1;
-         t_Conn_SeedChannels_Plane1 = ConnData.SeedChannels_Plane1;
-         t_Conn_SeedTicks_Plane1 = ConnData.SeedTicks_Plane1;
-         t_Conn_SeedIndexes_Plane2 = ConnData.SeedIndexes_Plane2;
-         t_Conn_OutputIndexes_Plane2 = ConnData.OutputIndexes_Plane2;
-         t_Conn_OutputSizes_Plane2 = ConnData.OutputSizes_Plane2;
-         t_Conn_SeedChannels_Plane2 = ConnData.SeedChannels_Plane2;
-         t_Conn_SeedTicks_Plane2 = ConnData.SeedTicks_Plane2;
+      for (const TVector3 &primaryVertex : RecoD.RecoPrimaryVertex)
+      {
+          t_RecoPrimaryVertexX.push_back(primaryVertex.X());
+          t_RecoPrimaryVertexY.push_back(primaryVertex.Y());
+          t_RecoPrimaryVertexZ.push_back(primaryVertex.Z());
       }
 
-      delete Reco_SM;
+      // Results of connectedness test on different combinations of tracks
+      if(f_Debug) std::cout << "Performing Connectedness Tests" << std::endl;
 
-      // If configured to get repass of reconstruction
-      if(f_RecoRepass.size()){
-        std::cout << "Getting repassed information" << std::endl;
-         for(size_t i_r=0;i_r<f_RecoRepass.size();i_r++){
-            SubModuleReco* Reco_SM_Repass = new SubModuleReco(e,f_IsData,f_RecoRepass.at(i_r));
-            Reco_SM_Repass->PrepareInfo();
-            //Reco_SM->SetIndices(t_IsSignal,t_IsSignalSigmaZero);
-            RecoData RecoD_Repass =  Reco_SM_Repass->GetInfo();   
-            t_RepassTrackPrimaryDaughters.insert(t_RepassTrackPrimaryDaughters.end(),RecoD_Repass.TrackPrimaryDaughters.begin(),RecoD_Repass.TrackPrimaryDaughters.end());
-            t_RepassShowerPrimaryDaughters.insert(t_RepassShowerPrimaryDaughters.end(),RecoD_Repass.ShowerPrimaryDaughters.begin(),RecoD_Repass.ShowerPrimaryDaughters.end());
-            delete Reco_SM_Repass;
+      for (unsigned int iSlice = 0; iSlice < RecoD.SliceID.size(); ++iSlice)
+      {
+         if(f_GetConnInfo)
+         {
+             CTOutcome ConnData = Conn_Helper.PrepareAndTestEvent(e, f_WireLabel, RecoD.TrackStarts.at(iSlice));
+
+             t_Conn_SeedIndexes_Plane0.push_back(ConnData.SeedIndexes_Plane0);
+             t_Conn_OutputIndexes_Plane0.push_back(ConnData.OutputIndexes_Plane0);
+             t_Conn_OutputSizes_Plane0.push_back(ConnData.OutputSizes_Plane0);
+             t_Conn_SeedChannels_Plane0.push_back(ConnData.SeedChannels_Plane0);
+             t_Conn_SeedTicks_Plane0.push_back(ConnData.SeedTicks_Plane0);
+             t_Conn_SeedIndexes_Plane1.push_back(ConnData.SeedIndexes_Plane1);
+             t_Conn_OutputIndexes_Plane1.push_back(ConnData.OutputIndexes_Plane1);
+             t_Conn_OutputSizes_Plane1.push_back(ConnData.OutputSizes_Plane1);
+             t_Conn_SeedChannels_Plane1.push_back(ConnData.SeedChannels_Plane1);
+             t_Conn_SeedTicks_Plane1.push_back(ConnData.SeedTicks_Plane1);
+             t_Conn_SeedIndexes_Plane2.push_back(ConnData.SeedIndexes_Plane2);
+             t_Conn_OutputIndexes_Plane2.push_back(ConnData.OutputIndexes_Plane2);
+             t_Conn_OutputSizes_Plane2.push_back(ConnData.OutputSizes_Plane2);
+             t_Conn_SeedChannels_Plane2.push_back(ConnData.SeedChannels_Plane2);
+             t_Conn_SeedTicks_Plane2.push_back(ConnData.SeedTicks_Plane2);
          }
+      }
+
+      //////////////////////////////
+      // Validation Info
+      //////////////////////////////
+      if (!f_IsData && G4_SM && f_GetValidationInfo)
+      {
+         if(f_Debug) std::cout << "Getting Validation Info" << std::endl;
+
+         Validation_SM = new SubModuleValidation(e, f_IsData, f_Validation);
+         Validation_SM->PrepareInfo(Generator_SM, G4_SM, t_TrackPrimaryDaughters, t_ShowerPrimaryDaughters);
+
+         ValidationData ValidationD = Validation_SM->GetInfo();
+
+         t_trueNuSliceID = ValidationD.m_trueNuSliceID;
+         t_trueMuonTrackID = ValidationD.m_trueMuonTrackID;
+         t_trueProtonTrackID = ValidationD.m_trueProtonTrackID;
+         t_truePionTrackID = ValidationD.m_truePionTrackID;
+         t_trueGammaTrackID = ValidationD.m_trueGammaTrackID;
       }
    }
 
+    // delete everything.. 
+    delete Generator_SM;
+    delete G4_SM;
+    delete Reco_SM;
+    delete Validation_SM;
 
-   // Systematics weights if requested
-/*
-   if(!f_IsData){
-
-      t_SysWeights.resize(t_NMCTruths);
-
-      for(size_t i_w=0;i_w<f_WeightLabels.size();i_w++){
-
-         std::cout << "Getting new weight products with label " << f_WeightLabels.at(i_w) << std::endl;
-
-         // Try to get some systematics info
-         art::Handle<std::vector<evwgh::MCEventWeight>> Handle_EventWeight;
-         std::vector<art::Ptr<evwgh::MCEventWeight>> Vect_EventWeight;
-
-         if(!e.getByLabel(f_WeightLabels.at(i_w),Handle_EventWeight)) 
-            throw cet::exception("HyperonNtuples") << "No EventWeight Found!" << std::endl;
-
-         art::fill_ptr_vector(Vect_EventWeight,Handle_EventWeight);
-
-         if(!Vect_EventWeight.size())
-            throw cet::exception("HyperonNtuples") << "Weight vector empty!" << std::endl;
-
-         if(Vect_EventWeight.size() != (size_t)t_NMCTruths)
-            throw cet::exception("HyperonNtuples") << "Weight vector size != NMCTruths" << std::endl;
-
-         for(size_t i_tr=0;i_tr<Vect_EventWeight.size();i_tr++){       
-
-            std::cout << "Getting weights for truth " << i_tr << std::endl;
-
-            std::map<std::string,std::vector<double>> theWeights = Vect_EventWeight.at(i_tr)->fWeight;
-            std::map<std::string,std::vector<double>>::iterator it;
-
-            for(it = theWeights.begin(); it != theWeights.end();it++){
-
-               if(it->first ==  "empty") continue;
-
-               bool dial_found=false;
-
-               // Search the dial vector for this dial         
-               for(size_t i_d=0;i_d<t_SysDials.size();i_d++){
-                  if(it->first == t_SysDials.at(i_d)){
-                     t_SysWeights.at(i_tr).at(i_d).insert(t_SysWeights.at(i_tr).at(i_d).end(),it->second.begin(),it->second.end());
-                     dial_found=true;
-                  }
-               }  
-
-               if(!dial_found){
-                  if(i_tr != 0)
-                     throw cet::exception("HyperonNtuples") << "Malformed systematics weight vectors" << std::endl;
-                  t_SysDials.push_back(it->first);
-                  t_SysWeights.at(0).push_back(it->second);
-                  for(size_t i_tr2=0;i_tr2<t_SysWeights.size();i_tr2++)
-                     t_SysWeights.at(i_tr2).resize(t_SysWeights.at(0).size());
-               } // if new dial
-
-            } // iterate over weight products       
-         } // i_tr
-
-      } // i_w
-   } // if not data
-*/
 
    if(!f_IsData){
 
@@ -615,7 +592,7 @@ void hyperon::HyperonNtuples::FinishEvent(){
    if(std::find(t_IsHyperon.begin(), t_IsHyperon.end(), true) != t_IsHyperon.end()) m_NHyperons++;
    if(std::find(t_IsSignal.begin(), t_IsSignal.end(), true) != t_IsSignal.end()) m_NSignal++;
    if(std::find(t_IsSignalSigmaZero.begin(), t_IsSignalSigmaZero.end(), true) != t_IsSignalSigmaZero.end()) m_NSignalSigmaZero++;
-   if(t_GoodReco) m_NGoodReco++;
+   //if(t_GoodReco) m_NGoodReco++;
 
    if(f_Debug) std::cout << "Finished event" << std::endl;
 
@@ -678,13 +655,17 @@ void hyperon::HyperonNtuples::beginJob(){
    OutputTree->Branch("DecayVertex_Y",&t_DecayVertex_Y);
    OutputTree->Branch("DecayVertex_Z",&t_DecayVertex_Z);
 
-   OutputTree->Branch("RecoPrimaryVertex","TVector3",&t_RecoPrimaryVertex);
-   OutputTree->Branch("NPrimaryTrackDaughters",&t_NPrimaryTrackDaughters);
-   OutputTree->Branch("NPrimaryShowerDaughters",&t_NPrimaryShowerDaughters);
-   OutputTree->Branch("TracklikePrimaryDaughters","vector<RecoParticle>",&t_TrackPrimaryDaughters);
-   OutputTree->Branch("ShowerlikePrimaryDaughters","vector<RecoParticle>",&t_ShowerPrimaryDaughters);
-   OutputTree->Branch("RepassTracklikePrimaryDaughters","vector<RecoParticle>",&t_RepassTrackPrimaryDaughters);
-   OutputTree->Branch("RepassShowerlikePrimaryDaughters","vector<RecoParticle>",&t_RepassShowerPrimaryDaughters);
+   std::cout << "JAM" << std::endl;
+
+   OutputTree->Branch("ChoosenNuSliceID", &t_ChoosenNuSliceID);
+   OutputTree->Branch("SliceID", &t_SliceID);
+   OutputTree->Branch("RecoPrimaryVertexX", &t_RecoPrimaryVertexX);
+   OutputTree->Branch("RecoPrimaryVertexY", &t_RecoPrimaryVertexY);
+   OutputTree->Branch("RecoPrimaryVertexZ", &t_RecoPrimaryVertexZ);
+   OutputTree->Branch("NPrimaryTrackDaughters", "std::vector<int>", &t_NPrimaryTrackDaughters);
+   OutputTree->Branch("NPrimaryShowerDaughters", "std::vector<int>", &t_NPrimaryShowerDaughters);
+   OutputTree->Branch("TracklikePrimaryDaughters", "std::vector<std::vector<RecoParticle>>",&t_TrackPrimaryDaughters);
+   OutputTree->Branch("ShowerlikePrimaryDaughters", "std::vector<std::vector<RecoParticle>>",&t_ShowerPrimaryDaughters);
 
    OutputTree->Branch("ConnSeedIndexes_Plane0",&t_Conn_SeedIndexes_Plane0);
    OutputTree->Branch("ConnOutputIndexes_Plane0",&t_Conn_OutputIndexes_Plane0);
@@ -701,6 +682,14 @@ void hyperon::HyperonNtuples::beginJob(){
    OutputTree->Branch("ConnOutputSizes_Plane2",&t_Conn_OutputSizes_Plane2);
    OutputTree->Branch("ConnSeedChannels_Plane2",&t_Conn_SeedChannels_Plane2);
    OutputTree->Branch("ConnSeedTicks_Plane2",&t_Conn_SeedTicks_Plane2);
+
+   OutputTree->Branch("TrueNuSliceID", &t_trueNuSliceID);
+   OutputTree->Branch("TrueMuonTrackID", &t_trueMuonTrackID);
+   OutputTree->Branch("TrueProtonTrackID", &t_trueProtonTrackID);
+   OutputTree->Branch("TruePionTrackID", &t_truePionTrackID);
+   OutputTree->Branch("TrueGammaTrackID", &t_trueGammaTrackID);
+
+   std::cout << "FROG" << std::endl;
 
    //OutputTree->Branch("SysDials",&t_SysDials);
    //OutputTree->Branch("SysWeights","vector<vector<vector<double>>>",&t_SysWeights);

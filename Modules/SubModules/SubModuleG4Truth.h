@@ -78,7 +78,7 @@ class SubModuleG4Truth {
       void GetKaonDecay();
       void GetSigmaZeroDecay();
       bool FindNeutronScatter();
-      int GetOrigin(int trackid);
+      int GetOrigin(int trackid) const;
       void MCTruthMatch(SimParticle &P);
       void SetFlags();
       

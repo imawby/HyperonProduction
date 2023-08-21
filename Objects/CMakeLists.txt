@@ -2,6 +2,7 @@ art_make(
 
       LIB_LIBRARIES
       ${ROOT_BASIC_LIB_LIST}
+      ${ROOT_GENVECTOR}
 
       DICT_LIBRARIES
       ${ROOT_BASIC_LIB_LIST}

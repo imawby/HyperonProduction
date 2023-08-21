@@ -1,5 +1,5 @@
 #ifndef LLRPID_H
-#define LLRPID_H
+#define LLRPID_H 1
 
 // #include "LLRPID_proton_muon_lookup.h"
 //#include "LLRPID_correction_lookup.h"

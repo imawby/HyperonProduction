@@ -5,6 +5,7 @@
 <class name="std::vector<SimParticle>"/>
 <class name="RecoParticle"/>
 <class name="std::vector<RecoParticle>"/>
+<class name="std::vector<std::vector<RecoParticle>>"/>
 </lcgdict>
 
 
