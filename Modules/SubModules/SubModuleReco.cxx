@@ -32,13 +32,8 @@ SubModuleReco::SubModuleReco(art::Event const& e, bool isdata, fhicl::ParameterS
               m_resRangeCutoff(pset.get<double>("ResRangeCutoff", 5.0)),
               m_reducedFileSize(pset.get<bool>("ReducedFileSize", false))
 {
-   std::cout << "m_PandoraModuleLabel: " << m_PandoraModuleLabel << std::endl;
-
    if (!e.getByLabel(m_PandoraSingleOutcomeModuleLabel, Handle_PFParticle_SingleOutcome))
        throw cet::exception("SubModuleReco") << "No Single Outcome PFParticle Data Products Found!" << std::endl;
-
-   std::cout << "m_PandoraModuleLabel" << m_PandoraModuleLabel << std::endl;
-   std::cout << "m_PandoraInstanceLabel" << m_PandoraInstanceLabel << std::endl;
 
    const art::InputTag pandoraTag(m_PandoraModuleLabel, m_PandoraInstanceLabel);
 
@@ -164,12 +159,9 @@ void SubModuleReco::PrepareInfo()
        if ((nTrackPrimaries == 0) && (nShowerPrimaries == 0))
            continue;
 
-       std::cout << "nTrackPrimaries: " << nTrackPrimaries << std::endl;
-       std::cout << "nShowerPrimaries: " << nShowerPrimaries << std::endl;
-
        if (m_reducedFileSize)
        {
-           if ((nTrackPrimaries != 3) && (nShowerPrimaries != 1))
+           if ((nTrackPrimaries < 3) || (nShowerPrimaries < 1))
            {
                /*
                nTrackPrimaries = 0;
@@ -182,8 +174,6 @@ void SubModuleReco::PrepareInfo()
                continue;
            }
        }
-
-       std::cout << "WE PASS TRACK/SHOWER CUTS!" << std::endl;
 
        theData.SliceID.push_back(slice->ID());
        theData.RecoPrimaryVertex.push_back(nuVertex3D);
@@ -308,7 +298,7 @@ void SubModuleReco::FillPrimaryInfo(const art::Ptr<recob::Slice> &slice, const b
        if (P.PDG == 13)
        {
            ++trackCounter;
-           P.Index = trackCounter - 1;
+           P.TrackVectorIndex = trackCounter - 1;
 
            std::vector<art::Ptr<recob::Track>> pfpTracks = useRepassLabels ? Assoc_PFParticleTrack_Reprocessed->at(pfp.key()) : 
                Assoc_PFParticleTrack->at(pfp.key());

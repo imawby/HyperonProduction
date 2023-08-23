@@ -47,6 +47,7 @@ DrawConnectedness: false
 
 # Validation submodule config
 Validation: {
+MCTruthModuleLabel:      "generator"
 MCParticleModuleLabel:   "largeant"
 HitModuleLabel:          "gaushit"
 PandoraModuleLabel:      "pandoraPatRec"

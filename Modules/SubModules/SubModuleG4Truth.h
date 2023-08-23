@@ -60,6 +60,7 @@ struct G4Truth {
    std::vector<double> DecayVertex_Y;
    std::vector<double> DecayVertex_Z;
 
+   double IsFilled = false;
 };
 
 class SubModuleG4Truth {

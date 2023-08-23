@@ -101,6 +101,9 @@ void SubModuleG4Truth::GetParticleLists(){
 
 G4Truth SubModuleG4Truth::GetG4Info(){
 
+   if (theTruth.IsFilled)
+      return theTruth;
+
    GetParticleLists();
 
    // Clear everything
@@ -140,6 +143,8 @@ G4Truth SubModuleG4Truth::GetG4Info(){
    if(theTruth.PrimaryKaon.size()) GetKaonDecay();
 
    SetFlags(); 
+
+   theTruth.IsFilled = true;
 
    return theTruth;
 }

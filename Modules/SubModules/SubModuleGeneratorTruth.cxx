@@ -21,6 +21,11 @@ SubModuleGeneratorTruth::SubModuleGeneratorTruth(art::Event const& e,fhicl::Para
 
 GeneratorTruth SubModuleGeneratorTruth::GetGeneratorTruth(){
 
+    std::cout << "Vect_MCTruth.size(): " << Vect_MCTruth.size() << std::endl;
+
+   if (theTruth.IsFilled)
+      return theTruth;
+
    if(!Vect_MCTruth.size()){
       std::cout << "MCTruth vector is empty" << std::endl;
       return theTruth;
@@ -32,7 +37,9 @@ GeneratorTruth SubModuleGeneratorTruth::GetGeneratorTruth(){
 
    for(const art::Ptr<simb::MCTruth> &theMCTruth : Vect_MCTruth){
 
+       std::cout << "1" << std::endl;
       simb::MCNeutrino Nu = theMCTruth->GetNeutrino();
+       std::cout << "2" << std::endl;
 
       int mode = Nu.Mode();
       int ccnc = Nu.CCNC();
@@ -85,7 +92,9 @@ GeneratorTruth SubModuleGeneratorTruth::GetGeneratorTruth(){
 
       if(theTruth.Neutrino.size() != Vect_MCTruth.size())         
          throw cet::exception("SubModuleGeneratorTruth") << "Sim Neutrino/MCTruth vector size mismatch" << std::endl;
-    
+ 
+      theTruth.IsFilled = true;
+   
    return theTruth;
 }
 

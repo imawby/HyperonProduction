@@ -655,8 +655,6 @@ void hyperon::HyperonNtuples::beginJob(){
    OutputTree->Branch("DecayVertex_Y",&t_DecayVertex_Y);
    OutputTree->Branch("DecayVertex_Z",&t_DecayVertex_Z);
 
-   std::cout << "JAM" << std::endl;
-
    OutputTree->Branch("ChoosenNuSliceID", &t_ChoosenNuSliceID);
    OutputTree->Branch("SliceID", &t_SliceID);
    OutputTree->Branch("RecoPrimaryVertexX", &t_RecoPrimaryVertexX);
@@ -688,8 +686,6 @@ void hyperon::HyperonNtuples::beginJob(){
    OutputTree->Branch("TrueProtonTrackID", &t_trueProtonTrackID);
    OutputTree->Branch("TruePionTrackID", &t_truePionTrackID);
    OutputTree->Branch("TrueGammaTrackID", &t_trueGammaTrackID);
-
-   std::cout << "FROG" << std::endl;
 
    //OutputTree->Branch("SysDials",&t_SysDials);
    //OutputTree->Branch("SysWeights","vector<vector<vector<double>>>",&t_SysWeights);

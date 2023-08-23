@@ -14,6 +14,7 @@ int GAMMA_INDEX = 3;
 
 SubModuleValidation::SubModuleValidation(art::Event const& evt, bool isData, fhicl::ParameterSet pset) :
     m_isData(isData),
+    m_MCTruthLabel(pset.get<std::string>("MCTruthModuleLabel")),
     m_MCParticleLabel(pset.get<std::string>("MCParticleModuleLabel")),
     m_HitLabel(pset.get<std::string>("HitModuleLabel")),
     m_PandoraModuleLabel(pset.get<std::string>("PandoraModuleLabel")),
@@ -25,6 +26,9 @@ SubModuleValidation::SubModuleValidation(art::Event const& evt, bool isData, fhi
 
     if (!evt.getByLabel(m_MCParticleLabel, m_mcParticleHandle))
         throw cet::exception("SubModuleValidation") << "No MCParticle Data Products Found!" << std::endl;
+
+    if (!evt.getByLabel(m_MCTruthLabel, m_mcTruthHandle))
+        throw cet::exception("SubModuleValidation") << "No MCTruth Data Products Found!" << std::endl;
 
     if (!evt.getByLabel(m_HitLabel, m_hitHandle))
         throw cet::exception("SubModuleValidation") << "No Hit Data Products Found!" << std::endl;
@@ -39,6 +43,7 @@ SubModuleValidation::SubModuleValidation(art::Event const& evt, bool isData, fhi
         throw cet::exception("SubModuleValidation") << "No Cluster Data Products Found!" << std::endl;
 
     // Fill those vectors!
+    art::fill_ptr_vector(m_mcTruthVector, m_mcTruthHandle);
     art::fill_ptr_vector(m_mcParticleVector, m_mcParticleHandle);
     art::fill_ptr_vector(m_hitVector, m_hitHandle);
     art::fill_ptr_vector(m_sliceVector, m_sliceHandle);
@@ -219,8 +224,23 @@ int SubModuleValidation::GetLeadEMTrackID(const art::Ptr<simb::MCParticle> &mcPa
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+// Just going to assume it is in the nu hierarchy if it has associated 
 void SubModuleValidation::FillMCSliceInfo()
 {
+    // Get nu children IDs
+    /*
+    std::vector<int> nuChildrenIDs;
+
+    for (const art::Ptr<simb::MCTruth> &mcTruth : m_mcTruthVector)
+    {
+        const simb::MCParticle mcNu(mcTruth->GetNeutrino().Nu());
+        const int nChildren(mcNu.NumberDaughters());
+
+        for (int i = 0; i < nChildren; ++i)
+            nuChildrenIDs.push_back(mcNu.Daughter(i));
+    }
+    */
+
     int highestHitNumber(-1);
     int highestHitSliceID(-1);
 
@@ -232,12 +252,13 @@ void SubModuleValidation::FillMCSliceInfo()
 
         for (const art::Ptr<recob::Hit> &sliceHit : sliceHits)
         {
+            // If it has truth info then in nu hierarchy
             if (m_hitToTrackIDMap.find(sliceHit.key()) == m_hitToTrackIDMap.end())
                 continue;
 
-            const int trackID = m_hitToTrackIDMap.at(sliceHit.key());
+            //const int trackID = m_hitToTrackIDMap.at(sliceHit.key());
 
-            if (IsInNuHierarchy(trackID))
+            //if (IsInNuHierarchy(trackID, nuChildrenIDs))
                 ++nuHits;
         }
 
@@ -248,25 +269,22 @@ void SubModuleValidation::FillMCSliceInfo()
         }
     }
 
-    if (highestHitSliceID >= 0)
-        m_validationData.m_trueNuSliceID = highestHitSliceID;
+    m_validationData.m_trueNuSliceID = highestHitSliceID;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool SubModuleValidation::IsInNuHierarchy(const int trackID)
+bool SubModuleValidation::IsInNuHierarchy(const int trackID, const std::vector<int> &nuChildrenIDs)
 {
     int motherID = trackID;
 
     while (m_mcParticleMap.find(motherID) != m_mcParticleMap.end())
     {
-        const art::Ptr<simb::MCParticle> motherMCParticle = m_mcParticleMap.at(motherID);
-        const int pdg(std::abs(motherMCParticle->PdgCode()));
-
-        if ((pdg == 12) || (pdg == 14) || (pdg == 16))
+        if (std::find(nuChildrenIDs.begin(), nuChildrenIDs.end(), motherID) != nuChildrenIDs.end())
             return true;
 
-        motherID = motherMCParticle->Mother();
+        const art::Ptr<simb::MCParticle> mcParticle = m_mcParticleMap.at(motherID);
+        motherID = mcParticle->Mother();
     }
 
     return false;

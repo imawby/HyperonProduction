@@ -55,17 +55,19 @@ class SubModuleValidation {
       bool IsEM(const art::Ptr<simb::MCParticle> &mcParticle);
       int GetLeadEMTrackID(const art::Ptr<simb::MCParticle> &mcParticle);
       void FillMCSliceInfo();
-      bool IsInNuHierarchy(const int trackID);
+      bool IsInNuHierarchy(const int trackID, const std::vector<int> &nuChildrenIDs);
       void FindMCParticleMatch(const SubModuleG4Truth* G4T, RecoParticle &recoParticle);
       void CollectHitsFromClusters(const art::Ptr<recob::PFParticle> &pfparticle, 
           std::vector<art::Ptr<recob::Hit>> &hits);
 
+      art::Handle<std::vector<simb::MCTruth>> m_mcTruthHandle;
       art::Handle<std::vector<simb::MCParticle>> m_mcParticleHandle;
       art::Handle<std::vector<recob::Hit>> m_hitHandle;
       art::Handle<std::vector<recob::Slice>> m_sliceHandle;
       art::Handle<std::vector<recob::PFParticle>> m_pfpHandle;
       art::Handle<std::vector<recob::Cluster>> m_clusterHandle;
 
+      std::vector<art::Ptr<simb::MCTruth>> m_mcTruthVector;
       std::vector<art::Ptr<simb::MCParticle>> m_mcParticleVector;
       std::vector<art::Ptr<recob::Hit>> m_hitVector;
       std::vector<art::Ptr<recob::Slice>> m_sliceVector;
@@ -84,6 +86,7 @@ class SubModuleValidation {
 
       // Configurables
       bool m_isData;
+      std::string m_MCTruthLabel;
       std::string m_MCParticleLabel;
       std::string m_HitLabel;
       std::string m_PandoraModuleLabel;
