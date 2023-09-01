@@ -117,7 +117,9 @@ private:
     // Does input include modified reco?
     bool m_modifiedRecoInput;
 
-    // Debug Info?
+    // Analyser modes
+    bool m_lambdaMode;
+    bool m_sigmaMode;
     bool m_debugMode;
 
     // ID info 
@@ -139,6 +141,9 @@ private:
 
     // Truth stuff (event level) 
     bool m_foundTrueNuVertexSCE;
+    double m_trueNuVertexX;
+    double m_trueNuVertexY;
+    double m_trueNuVertexZ;
     double m_trueNuVertexSCEX;
     double m_trueNuVertexSCEY;
     double m_trueNuVertexSCEZ;
@@ -148,6 +153,7 @@ private:
 
     // Truth stuff (particle level)
     std::vector<int> m_truePDG;
+    std::vector<double> m_trueModMomentum;
     std::vector<int> m_nTrueHits;
     std::vector<int> m_nTrueHitsU;
     std::vector<int> m_nTrueHitsV;
@@ -155,8 +161,10 @@ private:
     std::vector<double> m_trueNuVertexSep;
 
     // Reco stuff (event level)
-    double m_recoNuSliceScore;
-    int m_recoNuSliceID;
+    double m_flashMatchNuSliceScore;
+    int m_flashMatchNuSliceID;
+    int m_pandoraNuSliceID;
+    double m_pandoraNuSliceScore;
     bool m_foundCorrectNuSlice;
     bool m_foundRecoNuVertex;
     double m_recoNuVertexX;
@@ -214,6 +222,9 @@ private:
     std::vector<double> m_recoBestMatchRecoVertexZ;
     std::vector<double> m_recoBestMatchNuVertexSep;
 
+    // Particle indices for mode 
+    std::vector<int> modeParticleTypeIndices;
+
     // Linking particleTypeIndex -> list of hit.key()
     typedef std::map<int, int> TrueHitMap;
     TrueHitMap m_trueHitMap;
@@ -256,8 +267,20 @@ hyperon::SigmaRecoAnalyser::SigmaRecoAnalyser(fhicl::ParameterSet const& pset)
     m_ModifiedPFParticleLabel(pset.get<std::string>("ModifiedPFParticleLabel", "")),
     m_RepassPFParticleLabel(pset.get<std::string>("RepassPFParticleLabel", "")),
     m_modifiedRecoInput(pset.get<bool>("ModifiedRecoInput")),
+    m_lambdaMode(pset.get<bool>("LambdaMode", false)),
+    m_sigmaMode(pset.get<bool>("SigmaMode", true)),
     m_debugMode(pset.get<bool>("DebugMode"))
 {
+    if (m_lambdaMode && m_sigmaMode)
+        throw cet::exception("SigmaRecoAnalyser") << "Cannot Run in Both Lambda and Sigma Mode!" << std::endl;
+
+    if (!m_lambdaMode && !m_sigmaMode)
+        throw cet::exception("SigmaRecoAnalyser") << "Must Pick a Truth Mode to Run In!" << std::endl;
+
+    if (m_lambdaMode)
+        modeParticleTypeIndices = {MUON_INDEX, PROTON_INDEX, PION_INDEX};
+    else
+        modeParticleTypeIndices = {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX};
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -282,8 +305,7 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
     m_truePDG[MUON_INDEX] = -13;
     m_truePDG[PROTON_INDEX] = 2212;
     m_truePDG[PION_INDEX] = -211;
-    m_truePDG[GAMMA_INDEX] = 22;
-
+    if (m_sigmaMode) m_truePDG[GAMMA_INDEX] = 22;
 
     /////////////////////////
     // Investigating slices
@@ -346,7 +368,7 @@ void hyperon::SigmaRecoAnalyser::analyze(art::Event const& evt)
 
 bool hyperon::SigmaRecoAnalyser::IsSignalEvent(const GeneratorTruth & genTruth, const G4Truth &G4Truth)
 {
-    bool isSignalSigmaZero = false;
+    bool isSignal = false;
 
     for (int i = 0; i < genTruth.NMCTruths; i++)
     {
@@ -359,19 +381,22 @@ bool hyperon::SigmaRecoAnalyser::IsSignalEvent(const GeneratorTruth & genTruth, 
         if (genTruth.Neutrino.at(i).PDG != -14)
             continue;
 
-        if (!G4Truth.IsSigmaZeroCharged.at(i))
+        if (m_sigmaMode && !G4Truth.IsSigmaZeroCharged.at(i))
+            continue;
+
+        if (m_lambdaMode && !G4Truth.IsLambdaCharged.at(i))
             continue;
 
         if (G4Truth.IsAssociatedHyperon.at(i))
             continue;
 
-        isSignalSigmaZero = true;
+        isSignal = true;
         m_mcTruthIndex = i;
 
         break;
     }
 
-    return isSignalSigmaZero;
+    return isSignal;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -473,10 +498,13 @@ bool hyperon::SigmaRecoAnalyser::IdentifySignalParticles(const G4Truth &G4Truth)
         return false;
     }
 
-    if (!IdentifySignalParticle(G4Truth, GAMMA_INDEX))
+    if (m_sigmaMode)
     {
-        if (m_debugMode) std::cout << "Couldn't find MC gamma :(" << std::endl;
-        return false;
+        if (!IdentifySignalParticle(G4Truth, GAMMA_INDEX))
+        {
+            if (m_debugMode) std::cout << "Couldn't find MC gamma :(" << std::endl;
+            return false;
+        }
     }
 
     return true;
@@ -506,6 +534,8 @@ bool hyperon::SigmaRecoAnalyser::IdentifySignalParticle(const G4Truth &G4Truth, 
 
         found = true;
         m_trueParticleID[particleTypeIndex] = simParticle.ArtID;
+        m_trueModMomentum[particleTypeIndex] = simParticle.ModMomentum;
+
         break;
     }
 
@@ -519,19 +549,19 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleTopologyInfo(const GeneratorTruth
     const art::Ptr<simb::MCParticle> &muonMCParticle(m_mcParticleMap.at(m_trueParticleID[MUON_INDEX]));
     const art::Ptr<simb::MCParticle> &protonMCParticle(m_mcParticleMap.at(m_trueParticleID[PROTON_INDEX]));
     const art::Ptr<simb::MCParticle> &pionMCParticle(m_mcParticleMap.at(m_trueParticleID[PION_INDEX]));
-    const art::Ptr<simb::MCParticle> &gammaMCParticle(m_mcParticleMap.at(m_trueParticleID[GAMMA_INDEX]));
 
     const TVector3 &protonMom(protonMCParticle->Momentum().Vect());
     const TVector3 &pionMom(pionMCParticle->Momentum().Vect());
     const TVector3 &lambdaMom(protonMom + pionMom);
-    const TVector3 &gammaMom(gammaMCParticle->Momentum().Vect());
 
     m_trueProtonPiOpeningAngle = protonMom.Angle(pionMom);
-    m_trueGammaLambdaOpeningAngle = gammaMom.Angle(lambdaMom);
 
     const TVector3 nuVertex(genTruth.TruePrimaryVertex_X.at(m_mcTruthIndex), genTruth.TruePrimaryVertex_Y.at(m_mcTruthIndex), 
         genTruth.TruePrimaryVertex_Z.at(m_mcTruthIndex));
 
+    m_trueNuVertexX = nuVertex.X();
+    m_trueNuVertexY = nuVertex.Y();
+    m_trueNuVertexZ = nuVertex.Z();
 
     auto const *SCE = lar::providerFrom<spacecharge::SpaceChargeService>();
 
@@ -550,14 +580,23 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleTopologyInfo(const GeneratorTruth
     const TVector3 protonVertex(protonMCParticle->Vx(), protonMCParticle->Vy(), protonMCParticle->Vz());
     const TVector3 pionVertex(pionMCParticle->Vx(), pionMCParticle->Vy(), pionMCParticle->Vz());
 
-    // Gamma, end point is first energy deposit (who designs this?)
-    const TVector3 gammaVertex({gammaMCParticle->EndX(), gammaMCParticle->EndY(), gammaMCParticle->EndZ()});
-
-    m_trueGammaLambdaVertexSep = (protonVertex - gammaVertex).Mag();
     m_trueNuVertexSep[MUON_INDEX] = (muonVertex - nuVertex).Mag();
     m_trueNuVertexSep[PROTON_INDEX] = (protonVertex - nuVertex).Mag();
     m_trueNuVertexSep[PION_INDEX] = (pionVertex - nuVertex).Mag();
-    m_trueNuVertexSep[GAMMA_INDEX] = (gammaVertex - nuVertex).Mag();
+
+    if (m_sigmaMode)
+    {
+        const art::Ptr<simb::MCParticle> &gammaMCParticle(m_mcParticleMap.at(m_trueParticleID[GAMMA_INDEX]));
+        const TVector3 &gammaMom(gammaMCParticle->Momentum().Vect());
+
+        m_trueGammaLambdaOpeningAngle = gammaMom.Angle(lambdaMom);
+
+        // Gamma, end point is first energy deposit (who designs this?)
+        const TVector3 gammaVertex({gammaMCParticle->EndX(), gammaMCParticle->EndY(), gammaMCParticle->EndZ()});
+
+        m_trueGammaLambdaVertexSep = (protonVertex - gammaVertex).Mag();
+        m_trueNuVertexSep[GAMMA_INDEX] = (gammaVertex - nuVertex).Mag();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -576,7 +615,7 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
     // Get backtracker info
     art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData> assocMCPart = art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData>(hitHandle, evt, m_BacktrackLabel);
 
-    for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
+    for (int particleTypeIndex : modeParticleTypeIndices)
     {
         m_nTrueHits[particleTypeIndex] = 0;
         m_nTrueHitsW[particleTypeIndex] = 0;
@@ -607,7 +646,7 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
 
             m_trueHitMap[hit.key()] = trackID;
 
-            for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
+            for (int particleTypeIndex : modeParticleTypeIndices)
             {
                 if (trackID == m_trueParticleID[particleTypeIndex])
                 {
@@ -626,7 +665,7 @@ void hyperon::SigmaRecoAnalyser::FillMCParticleHitInfo(art::Event const& evt)
 
     if (m_debugMode)
     {
-        for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
+        for (int particleTypeIndex : modeParticleTypeIndices)
         {
             std::cout << "particleTypeIndex: " << particleTypeIndex << std::endl;
             std::cout << "nTrueHits: " << m_nTrueHits[particleTypeIndex] << std::endl;
@@ -700,7 +739,7 @@ void hyperon::SigmaRecoAnalyser::FillMCSliceInfo(art::Event const& evt)
             int trackID = m_trueHitMap.at(sliceHit.key());
 
             if ((trackID == m_trueParticleID[MUON_INDEX]) || (trackID == m_trueParticleID[PROTON_INDEX]) || 
-                (trackID == m_trueParticleID[PION_INDEX]) || (trackID == m_trueParticleID[GAMMA_INDEX]))
+                (trackID == m_trueParticleID[PION_INDEX]) || (m_sigmaMode && (trackID == m_trueParticleID[GAMMA_INDEX])))
             {
                 ++sliceSignalHitMap[slice->ID()]; 
             }
@@ -727,10 +766,10 @@ void hyperon::SigmaRecoAnalyser::FillMCSliceInfo(art::Event const& evt)
 void hyperon::SigmaRecoAnalyser::PerformMatching(art::Event const& evt)
 {
     // Fill matching map
-    for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
+    for (int particleTypeIndex : modeParticleTypeIndices)
     {
         FindMCParticleMatches(evt, particleTypeIndex, m_trueNuSliceID, m_trueNuSliceMatchingMap, m_trueNuSliceMatchingMap_Repass, m_trueOtherSliceMatchingMap);
-        FindMCParticleMatches(evt, particleTypeIndex, m_recoNuSliceID, m_recoNuSliceMatchingMap, m_recoNuSliceMatchingMap_Repass, m_recoOtherSliceMatchingMap);
+        FindMCParticleMatches(evt, particleTypeIndex, m_flashMatchNuSliceID, m_recoNuSliceMatchingMap, m_recoNuSliceMatchingMap_Repass, m_recoOtherSliceMatchingMap);
     }
 
     OrderMatchingMap(m_trueNuSliceMatchingMap);
@@ -1068,7 +1107,7 @@ void hyperon::SigmaRecoAnalyser::FillMatchingInfo(art::Event const& evt, const b
     int nParticlesFoundInNuSlice = 0;
     int nParticlesFoundInOtherSlice = 0;
 
-    for (int particleTypeIndex : {MUON_INDEX, PROTON_INDEX, PION_INDEX, GAMMA_INDEX})
+    for (int particleTypeIndex : modeParticleTypeIndices)
     {
         if (m_debugMode) std::cout << "--------------- particleTypeIndex: " << particleTypeIndex << std::endl;
 
@@ -1378,6 +1417,7 @@ void hyperon::SigmaRecoAnalyser::FillContaminationInfo(art::Event const& evt, co
 
 void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
 {
+    // Get the flash match nu slice ID
     art::Handle<std::vector<recob::PFParticle>> pfpHandle;
     std::vector<art::Ptr<recob::PFParticle>> pfpVector;
 
@@ -1406,12 +1446,12 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
         std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(neutrinoPFPs[0].key());
 
         if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("NuScore") != pfpMetadata[0]->GetPropertiesMap().end()))
-            m_recoNuSliceScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
+            m_flashMatchNuSliceScore = pfpMetadata[0]->GetPropertiesMap().at("NuScore");
 
         // Slice ID
         art::FindManyP<recob::Slice> sliceAssoc = art::FindManyP<recob::Slice>(pfpHandle, evt, "pandora");
         std::vector<art::Ptr<recob::Slice>> slice = sliceAssoc.at(neutrinoPFPs[0].key());
-        m_recoNuSliceID = slice[0]->ID();
+        m_flashMatchNuSliceID = slice[0]->ID();
 
         // Nu vertex
         art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, pfpInputTag);
@@ -1425,14 +1465,72 @@ void hyperon::SigmaRecoAnalyser::FillEventRecoInfo(art::Event const& evt)
             m_recoNuVertexZ = vertex[0]->position().Z();
         }
 
-        m_foundCorrectNuSlice = (m_recoNuSliceID == m_trueNuSliceID);
+        m_foundCorrectNuSlice = (m_flashMatchNuSliceID == m_trueNuSliceID);
+    }
 
-        if (m_debugMode)
+    // Get the Pandora nu slice ID
+    art::InputTag sliceInputTag_AO("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::Slice>> sliceHandle_AO;
+    std::vector<art::Ptr<recob::Slice>> sliceVector_AO;
+
+    if (!evt.getByLabel(sliceInputTag_AO, sliceHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No Slice Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::PFParticle> pfpAssoc_AO = art::FindManyP<recob::PFParticle>(sliceHandle_AO, evt, sliceInputTag_AO);
+    art::fill_ptr_vector(sliceVector_AO, sliceHandle_AO);
+
+    art::InputTag pfpInputTag_AO("pandoraPatRec", "allOutcomes");
+    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle_AO;
+
+    if (!evt.getByLabel(pfpInputTag_AO, pfparticleHandle_AO))
+        throw cet::exception("SigmaRecoAnalyser") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn_AO = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfparticleHandle_AO, evt, pfpInputTag_AO);
+
+    double bestTopologicalScore(-std::numeric_limits<double>::max());
+    int pandoraNuSliceID = -1;
+
+    for (const art::Ptr<recob::Slice> &slice : sliceVector_AO)
+    {
+        const std::vector<art::Ptr<recob::PFParticle>> slicePFPs = pfpAssoc_AO.at(slice.key());
+
+        for (const art::Ptr<recob::PFParticle> &pfp : slicePFPs)
         {
-            std::cout << "m_recoNuSliceScore: " << m_recoNuSliceScore << std::endl;
-            std::cout << "m_recoNuSliceID: " << m_recoNuSliceID << std::endl;
-            std::cout << "m_foundCorrectNuSlice: " << m_foundCorrectNuSlice << std::endl;
+            // only topological score for the primary pfp
+            if (!pfp->IsPrimary())
+                continue;
+
+            std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMeta = metadataAssn_AO.at(pfp.key());
+
+            if (pfpMeta.empty())
+                continue;
+
+            const larpandoraobj::PFParticleMetadata::PropertiesMap &pfParticlePropertiesMap(pfpMeta.at(0)->GetPropertiesMap());
+
+            if (!pfParticlePropertiesMap.empty() && (pfParticlePropertiesMap.find("NuScore") != pfParticlePropertiesMap.end()))
+            {
+                const double thisTopologicalScore = pfParticlePropertiesMap.at("NuScore");
+
+                if (thisTopologicalScore > bestTopologicalScore)
+                {
+                    bestTopologicalScore = thisTopologicalScore;
+                    pandoraNuSliceID = slice->ID();
+                    break;
+                }
+            }
         }
+    }
+
+    m_pandoraNuSliceID = pandoraNuSliceID;
+    m_pandoraNuSliceScore = bestTopologicalScore;
+
+    if (m_debugMode)
+    {
+        std::cout << "m_flashMatchNuSliceScore: " << m_flashMatchNuSliceScore << std::endl;
+        std::cout << "m_flashMatchNuSliceID: " << m_flashMatchNuSliceID << std::endl;
+        std::cout << "m_pandoraNuSliceID: " << m_pandoraNuSliceID << std::endl;
+        std::cout << "m_pandoraNuSliceScore: " << m_pandoraNuSliceScore << std::endl;
+        std::cout << "m_foundCorrectNuSlice: " << m_foundCorrectNuSlice << std::endl;
     }
 }
 
@@ -1448,9 +1546,14 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("Run", &m_run);
     m_tree->Branch("SubRun", &m_subRun);
     m_tree->Branch("Event", &m_event);
+    m_tree->Branch("SigmaMode", &m_sigmaMode);
+    m_tree->Branch("LambdaMode", &m_lambdaMode);
 
     // Truth stuff (event level) 
     m_tree->Branch("FoundTrueNuVertexSCE", &m_foundTrueNuVertexSCE);
+    m_tree->Branch("TrueNuVertexX", &m_trueNuVertexX);
+    m_tree->Branch("TrueNuVertexY", &m_trueNuVertexY);
+    m_tree->Branch("TrueNuVertexZ", &m_trueNuVertexZ);
     m_tree->Branch("TrueNuVertexSCEX", &m_trueNuVertexSCEX);
     m_tree->Branch("TrueNuVertexSCEY", &m_trueNuVertexSCEY);
     m_tree->Branch("TrueNuVertexSCEZ", &m_trueNuVertexSCEZ);
@@ -1475,8 +1578,10 @@ void hyperon::SigmaRecoAnalyser::beginJob()
     m_tree->Branch("TrueNuVertexSep", &m_trueNuVertexSep);
 
     // Reco stuff (event level)
-    m_tree->Branch("RecoNuSliceScore", &m_recoNuSliceScore);
-    m_tree->Branch("RecoNuSliceID", &m_recoNuSliceID);
+    m_tree->Branch("FlashMatchNuSliceScore", &m_flashMatchNuSliceScore);
+    m_tree->Branch("FlashMatchNuSliceID", &m_flashMatchNuSliceID);
+    m_tree->Branch("PandoraNuSliceID", &m_pandoraNuSliceID);
+    m_tree->Branch("PandoraNuSliceScore", &m_pandoraNuSliceScore);
     m_tree->Branch("FoundCorrectNuSlice", &m_foundCorrectNuSlice);
     m_tree->Branch("FoundRecoNuVertex", &m_foundRecoNuVertex);
     m_tree->Branch("RecoNuVertexX", &m_recoNuVertexX);
@@ -1555,11 +1660,11 @@ void hyperon::SigmaRecoAnalyser::Reset()
     // ID info    
     m_mcTruthIndex = DEFAULT_INT;
     m_trueParticleID.clear();
-    m_trueParticleID.resize(4, DEFAULT_INT);
+    m_trueParticleID.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_bestMatchedID.clear();
-    m_bestMatchedID.resize(4, DEFAULT_INT);
+    m_bestMatchedID.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_matchIDs.clear();
-    m_matchIDs.resize(4, std::vector<int>());
+    m_matchIDs.resize(modeParticleTypeIndices.size(), std::vector<int>());
     m_trueNuSliceID = DEFAULT_INT;
     m_trueNuSliceNHits = DEFAULT_INT;
 
@@ -1571,6 +1676,9 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Truth stuff (event level) 
     m_foundTrueNuVertexSCE = DEFAULT_BOOL;
+    m_trueNuVertexX = DEFAULT_DOUBLE;
+    m_trueNuVertexY = DEFAULT_DOUBLE;
+    m_trueNuVertexZ = DEFAULT_DOUBLE;
     m_trueNuVertexSCEX = DEFAULT_DOUBLE;
     m_trueNuVertexSCEY = DEFAULT_DOUBLE;
     m_trueNuVertexSCEZ = DEFAULT_DOUBLE;
@@ -1580,21 +1688,25 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Truth stuff (particle level)
     m_truePDG.clear();
-    m_truePDG.resize(4, DEFAULT_INT);
+    m_truePDG.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
+    m_trueModMomentum.clear();
+    m_trueModMomentum.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_nTrueHits.clear();
-    m_nTrueHits.resize(4, DEFAULT_INT);
+    m_nTrueHits.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_nTrueHitsU.clear();
-    m_nTrueHitsU.resize(4, DEFAULT_INT);
+    m_nTrueHitsU.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_nTrueHitsV.clear();
-    m_nTrueHitsV.resize(4, DEFAULT_INT);
+    m_nTrueHitsV.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_nTrueHitsW.clear();
-    m_nTrueHitsW.resize(4, DEFAULT_INT);
+    m_nTrueHitsW.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_trueNuVertexSep.clear();
-    m_trueNuVertexSep.resize(4, DEFAULT_DOUBLE);
+    m_trueNuVertexSep.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
 
     // Reco stuff (event level)
-    m_recoNuSliceScore = DEFAULT_DOUBLE;
-    m_recoNuSliceID = DEFAULT_DOUBLE;
+    m_flashMatchNuSliceScore = DEFAULT_DOUBLE;
+    m_flashMatchNuSliceID = DEFAULT_DOUBLE;
+    m_pandoraNuSliceID = DEFAULT_DOUBLE;
+    m_pandoraNuSliceScore = DEFAULT_DOUBLE;
     m_foundCorrectNuSlice = DEFAULT_BOOL;
     m_foundRecoNuVertex = DEFAULT_BOOL;
     m_recoNuVertexX = DEFAULT_DOUBLE;
@@ -1603,13 +1715,13 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Reco stuff - match found?
     m_matchFoundInTrueNuSlice.clear();
-    m_matchFoundInTrueNuSlice.resize(4, DEFAULT_INT);
+    m_matchFoundInTrueNuSlice.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_matchFoundInTrueOtherSlice.clear();
-    m_matchFoundInTrueOtherSlice.resize(4, DEFAULT_INT);
+    m_matchFoundInTrueOtherSlice.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_matchFoundInRecoNuSlice.clear();
-    m_matchFoundInRecoNuSlice.resize(4, DEFAULT_INT);
+    m_matchFoundInRecoNuSlice.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_matchFoundInRecoOtherSlice.clear();
-    m_matchFoundInRecoOtherSlice.resize(4, DEFAULT_INT);
+    m_matchFoundInRecoOtherSlice.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
 
     m_nParticlesFoundInTrueNuSlice = DEFAULT_INT;
     m_nParticlesFoundInTrueOtherSlice = DEFAULT_INT;
@@ -1628,54 +1740,54 @@ void hyperon::SigmaRecoAnalyser::Reset()
 
     // Reco stuff - best match stuff   
     m_trueBestMatchRecoRepass.clear();
-    m_trueBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
+    m_trueBestMatchRecoRepass.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_trueBestMatchHasTrack.clear();
-    m_trueBestMatchHasTrack.resize(4, DEFAULT_BOOL);
+    m_trueBestMatchHasTrack.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_trueBestMatchHasShower.clear();
-    m_trueBestMatchHasShower.resize(4, DEFAULT_BOOL);
+    m_trueBestMatchHasShower.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_trueBestMatchCompleteness.clear();
-    m_trueBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchCompleteness.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchPurity.clear();
-    m_trueBestMatchPurity.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchPurity.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchTrackScore.clear();
-    m_trueBestMatchTrackScore.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchTrackScore.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchGeneration.clear();
-    m_trueBestMatchGeneration.resize(4, DEFAULT_INT);
+    m_trueBestMatchGeneration.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_trueBestMatchSliceID.clear();
-    m_trueBestMatchSliceID.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchSliceID.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchRecoVertexX.clear();
-    m_trueBestMatchRecoVertexX.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchRecoVertexX.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchRecoVertexY.clear();
-    m_trueBestMatchRecoVertexY.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchRecoVertexY.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchRecoVertexZ.clear();
-    m_trueBestMatchRecoVertexZ.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchRecoVertexZ.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_trueBestMatchNuVertexSep.clear();
-    m_trueBestMatchNuVertexSep.resize(4, DEFAULT_DOUBLE);
+    m_trueBestMatchNuVertexSep.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
 
     m_recoBestMatchRecoRepass.clear();
-    m_recoBestMatchRecoRepass.resize(4, DEFAULT_BOOL);
+    m_recoBestMatchRecoRepass.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_recoBestMatchHasTrack.clear();
-    m_recoBestMatchHasTrack.resize(4, DEFAULT_BOOL);
+    m_recoBestMatchHasTrack.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_recoBestMatchHasShower.clear();
-    m_recoBestMatchHasShower.resize(4, DEFAULT_BOOL);
+    m_recoBestMatchHasShower.resize(modeParticleTypeIndices.size(), DEFAULT_BOOL);
     m_recoBestMatchCompleteness.clear();
-    m_recoBestMatchCompleteness.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchCompleteness.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchPurity.clear();
-    m_recoBestMatchPurity.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchPurity.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchTrackScore.clear();
-    m_recoBestMatchTrackScore.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchTrackScore.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchGeneration.clear();
-    m_recoBestMatchGeneration.resize(4, DEFAULT_INT);
+    m_recoBestMatchGeneration.resize(modeParticleTypeIndices.size(), DEFAULT_INT);
     m_recoBestMatchSliceID.clear();
-    m_recoBestMatchSliceID.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchSliceID.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchRecoVertexX.clear();
-    m_recoBestMatchRecoVertexX.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchRecoVertexX.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchRecoVertexY.clear();
-    m_recoBestMatchRecoVertexY.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchRecoVertexY.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchRecoVertexZ.clear();
-    m_recoBestMatchRecoVertexZ.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchRecoVertexZ.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
     m_recoBestMatchNuVertexSep.clear();
-    m_recoBestMatchNuVertexSep.resize(4, DEFAULT_DOUBLE);
+    m_recoBestMatchNuVertexSep.resize(modeParticleTypeIndices.size(), DEFAULT_DOUBLE);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////

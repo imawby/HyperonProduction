@@ -142,7 +142,8 @@ class hyperon::HyperonNtuples : public art::EDAnalyzer {
       //   Output for each slice
       ////////////////////////////
 
-      int t_ChoosenNuSliceID;
+      int t_FlashMatchedNuSliceID;
+      int t_PandoraNuSliceID;
       std::vector<int> t_SliceID;
 
       std::vector<bool> t_GoodReco;
@@ -301,7 +302,8 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
    t_DecayVertex_Y.clear();
    t_DecayVertex_Z.clear();
 
-   t_ChoosenNuSliceID = -1;
+   t_FlashMatchedNuSliceID = -1;
+   t_PandoraNuSliceID = -1;
    t_SliceID.clear();
 
    t_GoodReco.clear();
@@ -434,7 +436,8 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
       //Reco_SM->SetIndices(t_IsSignal,t_IsSignalSigmaZero);
       RecoData RecoD =  Reco_SM->GetInfo();   
 
-      t_ChoosenNuSliceID = RecoD.ChoosenNuSliceID;
+      t_FlashMatchedNuSliceID = RecoD.FlashMatchedNuSliceID;
+      t_PandoraNuSliceID = RecoD.PandoraNuSliceID;
       t_SliceID = RecoD.SliceID;
       t_NPrimaryDaughters = RecoD.NPrimaryDaughters;
       t_NPrimaryTrackDaughters = RecoD.NPrimaryTrackDaughters;
@@ -493,6 +496,12 @@ void hyperon::HyperonNtuples::analyze(art::Event const& e)
          t_trueProtonTrackID = ValidationD.m_trueProtonTrackID;
          t_truePionTrackID = ValidationD.m_truePionTrackID;
          t_trueGammaTrackID = ValidationD.m_trueGammaTrackID;
+
+
+         std::cout << "t_FlashMatchedNuSliceID: " << t_FlashMatchedNuSliceID << std::endl;
+         std::cout << "t_PandoraNuSliceID: " << t_PandoraNuSliceID << std::endl;
+         std::cout << "t_trueNuSliceID: " << t_trueNuSliceID << std::endl;
+
       }
    }
 
@@ -655,7 +664,8 @@ void hyperon::HyperonNtuples::beginJob(){
    OutputTree->Branch("DecayVertex_Y",&t_DecayVertex_Y);
    OutputTree->Branch("DecayVertex_Z",&t_DecayVertex_Z);
 
-   OutputTree->Branch("ChoosenNuSliceID", &t_ChoosenNuSliceID);
+   OutputTree->Branch("FlashMatchedNuSliceID", &t_FlashMatchedNuSliceID);
+   OutputTree->Branch("PandoraNuSliceID", &t_PandoraNuSliceID);
    OutputTree->Branch("SliceID", &t_SliceID);
    OutputTree->Branch("RecoPrimaryVertexX", &t_RecoPrimaryVertexX);
    OutputTree->Branch("RecoPrimaryVertexY", &t_RecoPrimaryVertexY);

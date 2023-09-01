@@ -46,7 +46,8 @@ namespace hyperon {
 struct RecoData {
 
    // Information for each slice 
-   int ChoosenNuSliceID;
+   int FlashMatchedNuSliceID;
+   int PandoraNuSliceID;
    std::vector<int> SliceID;
    std::vector<TVector3> RecoPrimaryVertex;
    std::vector<int> NPrimaryDaughters; 
@@ -158,7 +159,8 @@ class SubModuleReco {
       bool m_includeCosmics;
       bool m_reducedFileSize;
 
-      int GetChosenNuSliceID();
+      int GetFlashMatchedNuSliceID();
+      int GetPandoraNuSliceID();
       RecoParticle MakeRecoParticle(const art::Ptr<recob::PFParticle> &pfp, const bool useRepassLabels,
           const TVector3 &nuVertex3D);
       void GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp,RecoParticle &P, const bool useRepassLabels);

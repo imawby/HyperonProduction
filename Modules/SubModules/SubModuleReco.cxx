@@ -135,7 +135,8 @@ SubModuleReco::SubModuleReco(art::Event const& e, bool isdata, fhicl::ParameterS
 void SubModuleReco::PrepareInfo()
 {
    // Get chosen nu slice ID
-   theData.ChoosenNuSliceID = GetChosenNuSliceID();
+   theData.FlashMatchedNuSliceID = GetFlashMatchedNuSliceID();
+   theData.PandoraNuSliceID = GetPandoraNuSliceID();
 
    // Go through slices... 
    for (const art::Ptr<recob::Slice> &slice : Vect_Slice)
@@ -188,7 +189,7 @@ void SubModuleReco::PrepareInfo()
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int SubModuleReco::GetChosenNuSliceID()
+int SubModuleReco::GetFlashMatchedNuSliceID()
 {
     int nNeutrinos = 0;
     int nuSliceID = -1;
@@ -214,6 +215,46 @@ int SubModuleReco::GetChosenNuSliceID()
     return nuSliceID;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int SubModuleReco::GetPandoraNuSliceID()
+{
+    double bestTopologicalScore(-std::numeric_limits<double>::max());
+    int nuSliceID = -1;
+
+    for (const art::Ptr<recob::Slice> &slice : Vect_Slice)
+    {
+        const std::vector<art::Ptr<recob::PFParticle>> slicePFPs = Assoc_SlicePFParticle->at(slice.key());
+
+        for (const art::Ptr<recob::PFParticle> &pfp : slicePFPs)
+        {
+            // only topological score for the primary pfp
+            if (!pfp->IsPrimary())
+                continue;
+
+            std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMeta = Assoc_PFParticleMetadata->at(pfp.key());
+
+            if (pfpMeta.empty())
+                continue;
+
+            const larpandoraobj::PFParticleMetadata::PropertiesMap &pfParticlePropertiesMap(pfpMeta.at(0)->GetPropertiesMap());
+
+            if (!pfParticlePropertiesMap.empty() && (pfParticlePropertiesMap.find("NuScore") != pfParticlePropertiesMap.end()))
+            {
+                const double thisTopologicalScore = pfParticlePropertiesMap.at("NuScore");
+
+                if (thisTopologicalScore > bestTopologicalScore)
+                {
+                    bestTopologicalScore = thisTopologicalScore;
+                    nuSliceID = slice->ID();
+                    break;
+                }
+            }
+        }
+    }
+
+    return nuSliceID;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -360,7 +401,6 @@ void SubModuleReco::GetPFPMetadata(const art::Ptr<recob::PFParticle> &pfp, RecoP
          }
       }	
    }
-
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
