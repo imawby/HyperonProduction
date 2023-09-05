@@ -22,7 +22,7 @@
 #include "TVector3.h"
 
 // Services
-#include "art_root_io/TFileService.h"
+#include "art/Framework/Services/Optional/TFileService.h"
 #include "larevt/SpaceChargeServices/SpaceChargeService.h"
 
 // Hyperon
