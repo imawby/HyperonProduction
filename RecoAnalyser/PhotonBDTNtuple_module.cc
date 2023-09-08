@@ -35,6 +35,7 @@
 
 // lardataobj
 #include "lardataobj/AnalysisBase/BackTrackerMatchingData.h"
+#include "lardataobj/AnalysisBase/Calorimetry.h"
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Vertex.h"
@@ -42,6 +43,8 @@
 #include "lardataobj/RecoBase/PFParticleMetadata.h"
 #include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/SpacePoint.h"
+#include "lardataobj/RecoBase/Shower.h"
+#include "lardataobj/RecoBase/Track.h"
 
 // nusimdata
 #include "nusimdata/SimulationBase/MCParticle.h"
@@ -74,6 +77,7 @@ public:
   void endJob() override;
 
   void Reset();
+  void ResetPfo();
   void InitialiseTrees(); 
   void FillPandoraMaps(art::Event const& evt);
   void FillMCParticleMaps(art::Event const& evt);
@@ -89,16 +93,23 @@ public:
   void CollectHitsFromClusters(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfparticle, 
       std::vector<art::Ptr<recob::Hit>> &hits);
   void FillPFPHitInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp);
+  void FillNuVertexInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp);
   void FillPFPMiscInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp);
-
+  void FillPFPShowerInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp);
+  void FillPFPEnergyInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp);
+  double GetMedianValue(const std::vector<float> &inputVector);
 private:
 
     // Product labels
     fhicl::ParameterSet m_G4Labels;
     fhicl::ParameterSet m_generatorLabels;
     std::string m_MCParticleModuleLabel;
+    std::string m_HitModuleLabel;
     std::string m_PandoraModuleLabel;
     std::string m_BacktrackModuleLabel;
+    std::string m_TrackModuleLabel;
+    std::string m_ShowerModuleLabel;
+    std::string m_CalorimetryModuleLabel;
 
     // BDT trees
     TTree * m_electronTree;
@@ -115,7 +126,8 @@ private:
     double m_completeness;
     double m_purity;
     int m_generation;
-    double m_topologicalScore;
+    int m_pandoraPFPCode;
+    double m_trackShowerScore;
     double m_nuVertexSeparation;
     double m_trackParentSeparation;
     double m_showerOpeningAngle;
@@ -126,9 +138,7 @@ private:
     int m_nHitsV;
     int m_nHitsW;
     double m_totalEnergy;
-    double m_chargeAsymmetryNuVertexU;
-    double m_chargeAsymmetryNuVertexV;
-    double m_chargeAsymmetryNuVertexW;
+    double m_nuVertexChargeDistribution;
     double m_initialdEdx;
     std::vector<double> m_sigmaSystemEnergy;
     std::vector<double> m_sigmaSystemOpeningAngle;
@@ -150,6 +160,8 @@ private:
 
     // Linking Self() -> PFParticle
     lar_pandora::PFParticleMap m_pfpMap;
+
+    bool m_debug;
 };
 
 hyperon::PhotonBDTNtuple::PhotonBDTNtuple(fhicl::ParameterSet const& pset)
@@ -157,8 +169,13 @@ hyperon::PhotonBDTNtuple::PhotonBDTNtuple(fhicl::ParameterSet const& pset)
     m_G4Labels(pset.get<fhicl::ParameterSet>("Geant4")),
     m_generatorLabels(pset.get<fhicl::ParameterSet>("Generator")),
     m_MCParticleModuleLabel(pset.get<std::string>("MCParticleModuleLabel")),
+    m_HitModuleLabel(pset.get<std::string>("HitModuleLabel")),
     m_PandoraModuleLabel(pset.get<std::string>("PandoraModuleLabel")),
-    m_BacktrackModuleLabel(pset.get<std::string>("BacktrackModuleLabel"))
+    m_BacktrackModuleLabel(pset.get<std::string>("BacktrackModuleLabel")),
+    m_TrackModuleLabel(pset.get<std::string>("TrackModuleLabel")),
+    m_ShowerModuleLabel(pset.get<std::string>("ShowerModuleLabel")),
+    m_CalorimetryModuleLabel(pset.get<std::string>("CalorimetryModuleLabel")),
+    m_debug(pset.get<bool>("Debug"))
 {
     Reset();
     InitialiseTrees();
@@ -171,31 +188,8 @@ void hyperon::PhotonBDTNtuple::Reset()
     m_event = DEFAULT_INT;
     m_run = DEFAULT_INT;
     m_subrun = DEFAULT_INT;
-    m_truePDG = DEFAULT_INT;
-    m_isTrueSigmaPhoton = DEFAULT_INT;
-    m_completeness = DEFAULT_DOUBLE;
-    m_purity = DEFAULT_DOUBLE;
-    m_generation = DEFAULT_INT;
-    m_nHits2D = DEFAULT_INT;
-    m_nHits3D = DEFAULT_INT;
-    m_nHitsU = DEFAULT_INT;
-    m_nHitsV = DEFAULT_INT;
-    m_nHitsW = DEFAULT_INT;
-    m_nuVertexSeparation = DEFAULT_DOUBLE;
-    m_totalEnergy = DEFAULT_DOUBLE;
-    m_chargeAsymmetryNuVertexU = DEFAULT_DOUBLE;
-    m_chargeAsymmetryNuVertexV = DEFAULT_DOUBLE;
-    m_chargeAsymmetryNuVertexW = DEFAULT_DOUBLE;
-    m_initialdEdx = DEFAULT_DOUBLE;
-    m_topologicalScore = DEFAULT_DOUBLE;
-    m_showerOpeningAngle = DEFAULT_DOUBLE;
-    m_showerLength = DEFAULT_DOUBLE;
-    m_trackParentSeparation = DEFAULT_DOUBLE;
-    m_sigmaSystemEnergy.clear();
-    m_sigmaSystemOpeningAngle.clear();
-    m_sigmaSystemVertexSeparation.clear();
-    m_sigmaSystemTrack1.clear();
-    m_sigmaSystemTrack2.clear();
+
+    ResetPfo();
 
     m_trueNuSliceID = DEFAULT_INT;
     m_isTrueSigmaEvent = DEFAULT_BOOL;
@@ -205,6 +199,36 @@ void hyperon::PhotonBDTNtuple::Reset()
     m_trackIDToHits.clear();
     m_mcParticleMap.clear();
     m_pfpMap.clear();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::PhotonBDTNtuple::ResetPfo() 
+{
+    m_truePDG = DEFAULT_INT;
+    m_isTrueSigmaPhoton = DEFAULT_INT;
+    m_completeness = DEFAULT_DOUBLE;
+    m_purity = DEFAULT_DOUBLE;
+    m_generation = DEFAULT_INT;
+    m_pandoraPFPCode = DEFAULT_INT;
+    m_nHits2D = DEFAULT_INT;
+    m_nHits3D = DEFAULT_INT;
+    m_nHitsU = DEFAULT_INT;
+    m_nHitsV = DEFAULT_INT;
+    m_nHitsW = DEFAULT_INT;
+    m_nuVertexSeparation = DEFAULT_DOUBLE;
+    m_totalEnergy = DEFAULT_DOUBLE;
+    m_nuVertexChargeDistribution = DEFAULT_DOUBLE;
+    m_initialdEdx = DEFAULT_DOUBLE;
+    m_trackShowerScore = DEFAULT_DOUBLE;
+    m_showerOpeningAngle = DEFAULT_DOUBLE;
+    m_showerLength = DEFAULT_DOUBLE;
+    m_trackParentSeparation = DEFAULT_DOUBLE;
+    m_sigmaSystemEnergy.clear();
+    m_sigmaSystemOpeningAngle.clear();
+    m_sigmaSystemVertexSeparation.clear();
+    m_sigmaSystemTrack1.clear();
+    m_sigmaSystemTrack2.clear();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -228,6 +252,7 @@ void hyperon::PhotonBDTNtuple::InitialiseTrees()
         tree->Branch("Completeness", &m_completeness);
         tree->Branch("Purity", &m_purity);
         tree->Branch("Generation", &m_generation);
+        tree->Branch("PandoraPFPCode", &m_pandoraPFPCode);
         tree->Branch("NHits3D", &m_nHits3D);
         tree->Branch("NHits2D", &m_nHits2D);
         tree->Branch("NHitsU", &m_nHitsU);
@@ -235,11 +260,9 @@ void hyperon::PhotonBDTNtuple::InitialiseTrees()
         tree->Branch("NHitsW", &m_nHitsW);
         tree->Branch("NuVertexSeparation", &m_nuVertexSeparation);
         tree->Branch("TotalEnergy", &m_totalEnergy);
-        tree->Branch("ChargeAsymmetryNuVertexU", &m_chargeAsymmetryNuVertexU);
-        tree->Branch("ChargeAsymmetryNuVertexV", &m_chargeAsymmetryNuVertexV);
-        tree->Branch("ChargeAsymmetryNuVertexW", &m_chargeAsymmetryNuVertexW);
+        tree->Branch("NuVertexChargeDistribution", &m_nuVertexChargeDistribution);
         tree->Branch("InitialdEdx", &m_initialdEdx);
-        tree->Branch("TopologicalScore", &m_topologicalScore);
+        tree->Branch("TrackShowerScore", &m_trackShowerScore);
         tree->Branch("ShowerOpeningAngle", &m_showerOpeningAngle);
         tree->Branch("ShowerLength", &m_showerLength);
         tree->Branch("TrackParentSeparation", &m_trackParentSeparation);
@@ -257,10 +280,45 @@ void hyperon::PhotonBDTNtuple::analyze(art::Event const& evt)
 {
     Reset();
 
+    std::cout << "m_PandoraModuleLabel: " << m_PandoraModuleLabel << std::endl;
+
+    m_event = evt.event();
+    m_run = evt.run();
+    m_subrun = evt.subRun();
+
+    // MCParticle map
+    art::Handle<std::vector<recob::Shower>> showerHandle;
+    std::vector<art::Ptr<recob::Shower>> showerVector;
+
+    if (!evt.getByLabel(m_ShowerModuleLabel, showerHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No Shower Data Products Found!" << std::endl;
+
+    art::fill_ptr_vector(showerVector, showerHandle);
+
+    std::cout << "showerVector.size(): " << showerVector.size() << std::endl;
+
+    //////
+    art::Handle<std::vector<recob::Track>> trackHandle;
+    std::vector<art::Ptr<recob::Track>> trackVector;
+
+    if (!evt.getByLabel(m_TrackModuleLabel, trackHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No Track Data Products Found!" << std::endl;
+
+    art::fill_ptr_vector(trackVector, trackHandle);
+
+    std::cout << "trackVector.size(): " << trackVector.size() << std::endl;
+
+
+    if (m_debug) std::cout << "Filling Pandora Maps..." << std::endl;
     FillPandoraMaps(evt);
+    if (m_debug) std::cout << "Filling MCParticle Maps..." << std::endl;
     FillMCParticleMaps(evt);
+    if (m_debug) std::cout << "Filling MC Slice Info..." << std::endl;
     FillMCSliceInfo(evt);
+    if (m_debug) std::cout << "Filling MC Sigma Info..." << std::endl;
     FillMCSigmaInfo(evt);
+    if (m_debug) std::cout << "Filling PFParticle Information..." << std::endl;
+    FillPFPInformation(evt);
 }
 
 
@@ -298,7 +356,7 @@ void hyperon::PhotonBDTNtuple::FillMCParticleMaps(art::Event const& evt)
     art::Handle<std::vector<recob::Hit>> hitHandle;
     std::vector<art::Ptr<recob::Hit>> hitVector;
 
-    if (!evt.getByLabel(m_PandoraModuleLabel, hitHandle))
+    if (!evt.getByLabel(m_HitModuleLabel, hitHandle))
         throw cet::exception("PhotonBDTNtuple") << "No Hit Data Products Found!" << std::endl;
 
     art::fill_ptr_vector(hitVector, hitHandle);
@@ -496,17 +554,65 @@ void hyperon::PhotonBDTNtuple::FillPFPInformation(art::Event const& evt)
         if (slice->ID() != m_trueNuSliceID)
             continue;
 
+        if (m_debug) std::cout << "Found Slice, Filling PFParticle Information..." << std::endl;
+
         const std::vector<art::Ptr<recob::PFParticle>> &pfps(pfpAssoc.at(slice.key()));
 
         for (const art::Ptr<recob::PFParticle> &pfp : pfps)
         {
+            if (m_debug) std::cout << "New PFParticle!" << std::endl;
+
+            ResetPfo();
+
             int matchedTrackID(-1);
 
             if (!FillPFPMatchInfo(evt, pfp, matchedTrackID))
                 continue;
 
+            /*
+            if ((m_truePDG != 22) && (std::abs(m_truePDG) != 11))
+                continue;
+
+            if (m_debug) std::cout << "PFParticle Is Photon/Electron" << std::endl;
+            */
+
+            if (m_debug) std::cout << "Fill PFP Hit Information..." << std::endl;
             FillPFPHitInfo(evt, pfp);
+            if (m_debug) std::cout << "Fill Nu Vertex Information..." << std::endl;
+            FillNuVertexInfo(evt, pfp);
+            if (m_debug) std::cout << "Fill PFP Misc Information..." << std::endl;
             FillPFPMiscInfo(evt, pfp);
+            if (m_debug) std::cout << "Fill PFP Shower Information..." << std::endl;
+            FillPFPShowerInfo(evt, pfp);
+            if (m_debug) std::cout << "Fill PFP Energy Information..." << std::endl;
+            FillPFPEnergyInfo(evt, pfp);
+            if (m_debug) std::cout << "Fill Tree..." << std::endl;
+
+            // Set limits for easy viewing...
+            m_trackShowerScore = std::max(m_trackShowerScore, -2.0);
+            m_nuVertexSeparation = std::max(m_nuVertexSeparation, -2.0);
+            m_trackParentSeparation = std::max(m_trackParentSeparation, -2.0);
+            m_showerOpeningAngle  = std::max(m_showerOpeningAngle, -2.0);
+            m_showerLength = std::min(std::max(m_showerLength, -2.0), 1000.0);
+            m_nHits3D = std::min(std::max(m_nHits3D, -2), 1000);
+            m_nHits2D = std::min(std::max(m_nHits2D, -2), 3000);
+            m_nuVertexChargeDistribution = std::min(std::max(m_nuVertexChargeDistribution, -2.0), 200.0);
+            m_initialdEdx = std::min(std::max(m_initialdEdx, -2.0), 10.0);
+
+            // Fill tree...
+            if (m_truePDG == 22)
+            {
+                m_photonTree->Fill();
+
+                if (m_isTrueSigmaPhoton)
+                    m_sigmaSignalTree->Fill();
+                else
+                    m_sigmaBackgroundTree->Fill();
+            }
+            else
+            {
+                m_electronTree->Fill();
+            }
         }
     }
 }
@@ -594,15 +700,15 @@ void hyperon::PhotonBDTNtuple::CollectHitsFromClusters(art::Event const& evt, co
 
 void hyperon::PhotonBDTNtuple::FillPFPHitInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
 {
-    art::Handle<std::vector<recob::SpacePoint>> spacePointHandle;
-    std::vector<art::Ptr<recob::SpacePoint>> spacePointVector;
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
 
-    if (!evt.getByLabel(m_PandoraModuleLabel, spacePointHandle))
-        throw cet::exception("PhotonBDTNtuple") << "No SpacePoint Data Products Found!" << std::endl;
+    if (!evt.getByLabel(m_PandoraModuleLabel, pfpHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No PFParticle Data Products Found!" << std::endl;
 
-    art::fill_ptr_vector(spacePointVector, spacePointHandle);
+    art::FindManyP<recob::SpacePoint> spacePointAssoc = art::FindManyP<recob::SpacePoint>(pfpHandle, evt, m_PandoraModuleLabel);
+    const std::vector<art::Ptr<recob::SpacePoint>> &pfpSpacePoints = spacePointAssoc.at(pfp.key());
 
-    m_nHits3D = spacePointVector.size();
+    m_nHits3D = pfpSpacePoints.size();
 
     std::vector<art::Ptr<recob::Hit>> pfpHits;
     CollectHitsFromClusters(evt, pfp, pfpHits);
@@ -615,7 +721,6 @@ void hyperon::PhotonBDTNtuple::FillPFPHitInfo(art::Event const& evt, const art::
         const geo::WireID hit_WireID(hit->WireID());
         const geo::View_t hit_View(hit->View());
         const geo::View_t pandoraView(lar_pandora::LArPandoraGeometry::GetGlobalView(hit_WireID.Cryostat, hit_WireID.TPC, hit_View));
-
 
         if (pandoraView == geo::kW)
             ++wCount;
@@ -633,13 +738,8 @@ void hyperon::PhotonBDTNtuple::FillPFPHitInfo(art::Event const& evt, const art::
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-void hyperon::PhotonBDTNtuple::FillPFPMiscInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
+void hyperon::PhotonBDTNtuple::FillNuVertexInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
 {
-    ////////////////////////
-    // Generation
-    ////////////////////////
-    m_generation = lar_pandora::LArPandoraHelper::GetGeneration(m_pfpMap, pfp);
-
     ////////////////////////
     // NuVertex Separation
     ////////////////////////
@@ -664,31 +764,95 @@ void hyperon::PhotonBDTNtuple::FillPFPMiscInfo(art::Event const& evt, const art:
     std::vector<art::Ptr<recob::PFParticle>> neutrinoPFPs;
     lar_pandora::LArPandoraHelper::SelectNeutrinoPFParticles(slicePFPs, neutrinoPFPs);
 
-    if (neutrinoPFPs.size() == 1)
+    if (neutrinoPFPs.size() != 1)
+        return;
+
+    art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, m_PandoraModuleLabel);
+
+    const std::vector<art::Ptr<recob::Vertex>> &nuVertex(vertexAssoc.at(neutrinoPFPs.at(0).key()));
+    const std::vector<art::Ptr<recob::Vertex>> &pfpVertex(vertexAssoc.at(pfp.key()));
+
+    if (nuVertex.empty() || pfpVertex.empty())
+        return;
+
+    const double dX(nuVertex.at(0)->position().X() - pfpVertex.at(0)->position().X());
+    const double dY(nuVertex.at(0)->position().Y() - pfpVertex.at(0)->position().Y());
+    const double dZ(nuVertex.at(0)->position().Z() - pfpVertex.at(0)->position().Z());
+
+    m_nuVertexSeparation = std::sqrt((dX * dX) + (dY * dY) + (dZ * dZ));
+
+    ////////////////////////
+    // NuVertex Charge Distribution (in 3D)
+    ////////////////////////
+    const geo::Vector_t geoNuVertex(nuVertex.at(0)->position().X(), nuVertex.at(0)->position().Y(), nuVertex.at(0)->position().Z());
+    const geo::Vector_t geoPFPVertex(pfpVertex.at(0)->position().X(), pfpVertex.at(0)->position().Y(), pfpVertex.at(0)->position().Z());
+    const geo::Vector_t nuVertexAxis((geoPFPVertex - geoNuVertex).Unit());
+
+    // Need SpacePoints
+    art::FindManyP<recob::SpacePoint> spacePointAssoc = art::FindManyP<recob::SpacePoint>(pfpHandle, evt, m_PandoraModuleLabel);
+    const std::vector<art::Ptr<recob::SpacePoint>> &spacePoints(spacePointAssoc.at(pfp.key()));
+
+    if (!spacePoints.empty())
     {
-        art::FindManyP<recob::Vertex> vertexAssoc = art::FindManyP<recob::Vertex>(pfpHandle, evt, m_PandoraModuleLabel);
+        // Need charge info
+        art::Handle<std::vector<recob::SpacePoint>> spacePointHandle;
 
-        const std::vector<art::Ptr<recob::Vertex>> &nuVertex(vertexAssoc.at(neutrinoPFPs.at(0).key()));
-        const std::vector<art::Ptr<recob::Vertex>> &pfpVertex(vertexAssoc.at(pfp.key()));
+        if (!evt.getByLabel(m_PandoraModuleLabel, spacePointHandle))
+            throw cet::exception("PhotonBDTNtuple") << "No SpacePoint Data Products Found!" << std::endl;
 
-        if (!nuVertex.empty() && !pfpVertex.empty())
+        art::FindManyP<recob::Hit> hitAssoc = art::FindManyP<recob::Hit>(spacePointHandle, evt, m_PandoraModuleLabel);
+
+        // Nu vertex charge distribution
+        double totalCharge(0.f);
+        double nuVertexChargeDistribution = 0.f;
+
+        for (const art::Ptr<recob::SpacePoint> &spacePoint : spacePoints)
         {
-            const double dX(nuVertex.at(0)->position().X() - pfpVertex.at(0)->position().X());
-            const double dY(nuVertex.at(0)->position().Y() - pfpVertex.at(0)->position().Y());
-            const double dZ(nuVertex.at(0)->position().Z() - pfpVertex.at(0)->position().Z());
+            const std::vector<art::Ptr<recob::Hit>> &hit(hitAssoc.at(spacePoint.key()));
 
-            m_nuVertexSeparation = std::sqrt((dX * dX) + (dY * dY) + (dZ * dZ));
+            if (hit.empty())
+                continue;
+
+            const double hitCharge(std::fabs(hit.at(0)->Integral()));
+            totalCharge += hitCharge;
+
+            const geo::Vector_t geoSpacePoint(spacePoint->XYZ()[0], spacePoint->XYZ()[1], spacePoint->XYZ()[2]);
+            const geo::Vector_t displacement(geoSpacePoint - geoNuVertex);
+            const double thisT(std::sqrt(nuVertexAxis.Cross(displacement).Mag2()));
+
+            nuVertexChargeDistribution += (thisT * hitCharge);
         }
+
+        if (totalCharge > std::numeric_limits<double>::epsilon())
+            nuVertexChargeDistribution /= totalCharge;
+
+        m_nuVertexChargeDistribution = nuVertexChargeDistribution;
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::PhotonBDTNtuple::FillPFPMiscInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
+{
+    ////////////////////////
+    // Generation
+    ////////////////////////
+    m_generation = lar_pandora::LArPandoraHelper::GetGeneration(m_pfpMap, pfp);
+    m_pandoraPFPCode = pfp->PdgCode();
 
     ////////////////////////
-    // Topological Score
+    // TrackShower Score
     ////////////////////////
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
+
+    if (!evt.getByLabel(m_PandoraModuleLabel, pfpHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No PFParticle Data Products Found!" << std::endl;
+
     art::FindManyP<larpandoraobj::PFParticleMetadata> metadataAssn = art::FindManyP<larpandoraobj::PFParticleMetadata>(pfpHandle, evt, m_PandoraModuleLabel);
     std::vector<art::Ptr<larpandoraobj::PFParticleMetadata>> pfpMetadata = metadataAssn.at(pfp.key());
 
     if (!pfpMetadata.empty() && (pfpMetadata[0]->GetPropertiesMap().find("TrackScore") != pfpMetadata[0]->GetPropertiesMap().end()))
-        m_topologicalScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
+        m_trackShowerScore = pfpMetadata[0]->GetPropertiesMap().at("TrackScore");
 
     ////////////////////////
     // Parent Separation
@@ -727,16 +891,139 @@ void hyperon::PhotonBDTNtuple::FillPFPMiscInfo(art::Event const& evt, const art:
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+void hyperon::PhotonBDTNtuple::FillPFPShowerInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
+{
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
+
+    if (!evt.getByLabel(m_PandoraModuleLabel, pfpHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::Shower> showerAssoc = art::FindManyP<recob::Shower>(pfpHandle, evt, m_ShowerModuleLabel);
+    const std::vector<art::Ptr<recob::Shower>> &shower = showerAssoc.at(pfp.key());
+
+    if (shower.empty())
+        return;
+
+    m_showerOpeningAngle = shower.at(0)->OpenAngle() * 180.0 / 3.14;
+    m_showerLength = shower.at(0)->Length();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
+void hyperon::PhotonBDTNtuple::FillPFPEnergyInfo(art::Event const& evt, const art::Ptr<recob::PFParticle> &pfp)
+{
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
+
+    if (!evt.getByLabel(m_PandoraModuleLabel, pfpHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No PFParticle Data Products Found!" << std::endl;
+
+    art::FindManyP<recob::Track> trackAssoc = art::FindManyP<recob::Track>(pfpHandle, evt, m_TrackModuleLabel);
+
+    // Get the track
+    const std::vector<art::Ptr<recob::Track>> &track = trackAssoc.at(pfp.key());
+
+    if (track.empty())
+        return;
+
+    art::Handle<std::vector<recob::Track>> trackHandle;
+
+    if (!evt.getByLabel(m_TrackModuleLabel, trackHandle))
+        throw cet::exception("PhotonBDTNtuple") << "No Track Data Products Found!" << std::endl;
+
+    art::FindManyP<anab::Calorimetry> caloAssoc = art::FindManyP<anab::Calorimetry>(trackHandle, evt, m_CalorimetryModuleLabel);
+
+    const std::vector<art::Ptr<anab::Calorimetry>> &trackCalo = caloAssoc.at(track.at(0).key());
+
+    if (trackCalo.empty())
+        return;
+
+    // Get the correct plane (collection) because it's not always the same                                                                                                        
+    bool foundCorrectPlane = false;
+    size_t index = 0;
+
+    for (size_t i = 0; i < trackCalo.size(); ++i)
+    {
+        if (trackCalo.at(i)->PlaneID().Plane == 2)
+        {
+            foundCorrectPlane = true;
+            index = i;
+            break;
+        }
+    }
+
+    if (!foundCorrectPlane)
+        return;
+
+    std::vector<float> calibrated_dEdX = trackCalo.at(index)->dEdx();
+    const std::vector<float> residualRange = trackCalo.at(index)->ResidualRange();
+    const std::vector<geo::Point_t> theXYZPositions = trackCalo.at(index)->XYZ();
+
+    float minRange = std::numeric_limits<float>::max();
+    float maxRange = -std::numeric_limits<float>::max();
+
+    for (size_t i = 0; i < calibrated_dEdX.size(); ++i)
+    {
+        // Sometimes I think the dEdx fails? sometimes, everybody cries...
+        // I think you can pick this out with a magnitude of zero
+        const geo::Point_t xyzPosition = theXYZPositions[i];
+        double magnitude = sqrt((xyzPosition.X() * xyzPosition.X()) + (xyzPosition.Y() * xyzPosition.Y()) + (xyzPosition.Z() * xyzPosition.Z()));
+
+         if (magnitude < std::numeric_limits<double>::epsilon())
+             continue;
+
+         if (residualRange[i] < minRange)
+             minRange = residualRange[i];
+
+         if (residualRange[i] > maxRange)
+             maxRange = residualRange[i];
+    }
+
+    // Median energy in first 4cm
+    std::vector<float> initialSegmentdEdx;
+
+    for (size_t i = 0; i < calibrated_dEdX.size(); ++i)
+    {
+        if (((maxRange - residualRange[i]) > 0) && ((maxRange - residualRange[i]) < 4.0))
+            initialSegmentdEdx.push_back(calibrated_dEdX[i]);
+    }
+
+    m_initialdEdx = GetMedianValue(initialSegmentdEdx);
+    m_totalEnergy = trackCalo.at(index)->KineticEnergy();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+double hyperon::PhotonBDTNtuple::GetMedianValue(const std::vector<float> &inputVector)
+{
+    if (inputVector.empty())
+        return -999.0;
+
+    // if odd
+    if (inputVector.size() % 2 != 0)
+    {
+        const int index = std::floor(static_cast<double>(inputVector.size()) / 2.0);
+        return inputVector.at(index);
+    }
+
+    // if even
+    const int firstIndex = inputVector.size() / static_cast<int>(2);
+    const int secondIndex = firstIndex - 1;
+
+    return (inputVector.at(firstIndex) + inputVector.at(secondIndex)) / 2.0;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+
 void hyperon::PhotonBDTNtuple::beginJob()
 {
-  // Implementation of optional member function here.
+    if (m_debug) std::cout << "Starting..." << std::endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 void hyperon::PhotonBDTNtuple::endJob()
 {
-  // Implementation of optional member function here.
+    if (m_debug) std::cout << "Finished..." << std::endl;
 }
 
 DEFINE_ART_MODULE(hyperon::PhotonBDTNtuple)

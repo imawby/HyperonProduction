@@ -2,8 +2,8 @@
 <!DOCTYPE project [
 <!ENTITY file_type "montecarlo">
 <!ENTITY run_type "physics">
-<!ENTITY release "v09_76_00">
-<!ENTITY qualifiers "e20:prof">
+<!ENTITY release "v08_00_00_51">
+<!ENTITY qualifiers "e17:prof">
 <!ENTITY name "HyperonNtuples">
 <!ENTITY path "/pnfs/uboone/persistent/users/imawby/run3b/HyperonCV">
 <!ENTITY run3bdef "cthorpe_make_hyperon_events_numi_rhc_run3b_detvar_reco2_CV_reco2">
@@ -42,9 +42,10 @@
   <workdir>&path;/&name;_work_reco</workdir>
   <memory>4000</memory>
   <disk>4GB</disk>
-  <numjobs>981</numjobs>
+  <!--numjobs>981</numjobs-->
+  <numjobs>1</numjobs>
   <targetsize>8000000000</targetsize>
-  <maxfilesperjob>5</maxfilesperjob>
+  <maxfilesperjob>1</maxfilesperjob>
 </stage>
 
 <!-- file type -->

@@ -27,7 +27,7 @@ physics:
          }
          CorrectSCE: false
          Flip_dQdx: false
-         SpacePointModuleLabel: "pandoraPatRec::allOutcomes"
+         SpacePointModuleLabel: "pandoraPatRec:allOutcomes"
          SpacePointInstanceLabel: "allOutcomes"
          T0ModuleLabel: "mctrutht0"
          TrackModuleLabel: "pandoraAllOutcomesTrackRedo"
@@ -133,10 +133,8 @@ services.SpaceCharge.EnableSimEfieldSCE: true
 services.SpaceCharge.RepresentationType: "Voxelized_TH3"
 services.SpaceCharge.CalibrationInputFilename: "SpaceCharge/SCEoffsets_dataDriven_combined_bkwd_Jan18.root"
 
-physics.producers.pandoraAllOutcomesTrackRedo.PFParticleLabel:  "pandoraPatRec::allOutcomes"
-physics.producers.pandoraAllOutcomesShowerRedo.PFParticleLabel: "pandoraPatRec::allOutcomes"
-physics.producers.pandoraAllOutcomesTrackRedo.PFParticleInstance:  "allOutcomes"
-physics.producers.pandoraAllOutcomesShowerRedo.PFParticleInstance: "allOutcomes"
+physics.producers.pandoraAllOutcomesTrackRedo.PFParticleLabel:  "pandoraPatRec:allOutcomes"
+physics.producers.pandoraAllOutcomesShowerRedo.PFParticleLabel: "pandoraPatRec:allOutcomes"
 
 physics.analyzers.ana.IsData: false
 physics.analyzers.ana.Debug: true
